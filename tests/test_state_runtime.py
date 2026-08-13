@@ -114,8 +114,15 @@ def test_nfs_worker_stages_bids_and_strips_phi(nfs_tmp: Path) -> None:
     assert release["ready"]
     assert release["task_counts"] == {"complete": 1}
     assert release["artifact_count"] == 1
+    assert release["tensor_count"] == 1
     assert Path(release["artifact_index"]).is_file()
     assert Path(release["tensor_index"]).is_file()
+    tensor_rows = [
+        json.loads(line)
+        for line in Path(release["tensor_index"]).read_text().splitlines()
+    ]
+    assert tensor_rows[0]["tensor_count"] == 1
+    assert tensor_rows[1]["path"].endswith(".nii.gz")
 
 
 def test_failed_task_retries_until_terminal_failure(nfs_tmp: Path) -> None:

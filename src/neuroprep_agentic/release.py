@@ -13,12 +13,23 @@ from .state import RunState
 TENSOR_SUFFIXES = {
     ".h5",
     ".hdf5",
+    ".gii",
+    ".mgh",
+    ".mgz",
+    ".nii",
+    ".nii.gz",
     ".npy",
     ".npz",
     ".pt",
     ".safetensors",
     ".zarr",
 }
+
+
+def _is_tensor_artifact(path: Path) -> bool:
+    """Return whether an artifact stores a model-consumable numeric array."""
+    name = path.name.lower()
+    return any(name.endswith(suffix) for suffix in TENSOR_SUFFIXES)
 
 
 def _atomic_json(path: Path, payload: Any) -> None:
@@ -130,9 +141,7 @@ def finalize_execution_run(
         *artifact_rows,
     ]
 
-    tensor_rows = [
-        row for row in artifact_rows if Path(str(row["path"])).suffix.lower() in TENSOR_SUFFIXES
-    ]
+    tensor_rows = [row for row in artifact_rows if _is_tensor_artifact(Path(row["path"]))]
     tensor_index = [
         {
             "record_type": "index_metadata",
