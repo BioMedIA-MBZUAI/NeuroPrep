@@ -720,7 +720,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "--participant-label",
                 "{subject}",
                 "--work-dir",
-                "/work/petprep/{subject}",
+                "/work/petprep/nfs-linear-v1/{subject}",
                 "--fs-license-file",
                 "/fs_license.txt",
                 "--fs-subjects-dir",

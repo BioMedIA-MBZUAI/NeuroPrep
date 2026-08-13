@@ -128,6 +128,7 @@ def test_petprep_handles_multiprocessing_cleanup_on_nfs_tmp() -> None:
     assert "--omp-nthreads 1" in command
     assert "--stop-on-first-crash" in command
     assert "--notrack" in command
+    assert "--work-dir /work/petprep/nfs-linear-v1/{subject}" in command
 
 
 def test_native_spatial_routes_use_pinned_container_toolchain() -> None:
