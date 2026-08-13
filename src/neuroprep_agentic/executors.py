@@ -530,7 +530,6 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "/neuroprep-resources/qsiprep_primary_t1.json",
                 "--eddy-config",
                 "/neuroprep-resources/eddy_cuda.json",
-                "--skip-anat-based-spatial-normalization",
                 "--skip-bids-validation",
                 "--separate-all-dwis",
             ),
@@ -566,13 +565,14 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             command=(
                 "/usr/bin/singularity",
                 "run",
-                "--nv",
                 "--cleanenv",
                 "--containall",
                 "--bind",
                 "{derivatives_root}:/out",
                 "--bind",
                 "{work_root}:/work",
+                "--bind",
+                "{freesurfer_license}:/fs_license.txt:ro",
                 "{image}",
                 "/out/qsiprep",
                 "/out/qsirecon",
@@ -585,19 +585,26 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "{cpus}",
                 "--omp-nthreads",
                 "4",
+                "--fs-license-file",
+                "/fs_license.txt",
                 "--recon-spec",
                 "dsi_studio_gqi",
+                "--atlases",
+                "AAL116",
             ),
+            # Reuse validated templates from the persistent run cache. Preserve the
+            # image's own /opt/ants and workbench library paths: overriding
+            # LD_LIBRARY_PATH under --cleanenv breaks ANTs in this image.
             environment={
-                "LD_LIBRARY_PATH": (
-                    "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:"
-                    "/app/.pixi/envs/qsirecon/lib:/usr/local/nvidia/lib:"
-                    "/usr/local/nvidia/lib64:/.singularity.d/libs"
-                ),
+                "TEMPLATEFLOW_HOME": "{work_root}/cache/templateflow",
+                "XDG_CACHE_HOME": "{work_root}/cache/xdg",
             },
             artifacts=(artifact("diffusion_model", "qsirecon/**/sub-{subject}/**/*"),),
             source="https://github.com/PennLINC/qsirecon",
-            notes="DSI Studio GQI provides tensor scalars and tractography across diverse schemes.",
+            notes=(
+                "DSI Studio GQI provides tensor scalars, tractography, and AAL116 "
+                "connectivity across diverse schemes."
+            ),
         ),
         native(
             "neuroprep-fieldmap-validator",

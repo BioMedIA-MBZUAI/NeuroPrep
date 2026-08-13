@@ -46,7 +46,9 @@ def test_qsiprep_preserves_proven_gradient_and_geometry_safeguards() -> None:
     assert "eddy_cuda10.2" in command
     assert "/neuroprep-resources/qsiprep_primary_t1.json" in command
     assert "/neuroprep-resources/eddy_cuda.json" in command
-    assert "--skip-anat-based-spatial-normalization" in definition.command
+    # QSIRecon requires the ACPC-to-template transforms emitted by the
+    # normalization stage, so the production QSIPrep command must retain it.
+    assert "--skip-anat-based-spatial-normalization" not in definition.command
     assert "--separate-all-dwis" in definition.command
     assert "--derivatives" not in definition.command
     assert "{agentic_project}/src/neuroprep_agentic/resources/eddy_cuda10.2" in command
@@ -89,9 +91,9 @@ def test_smriprep_019_uses_only_supported_cli_flags() -> None:
     assert "{bids_root}:/source-data:ro" in definition.command
 
 
-def test_aslprep_and_petprep_use_nfs_templateflow_cache() -> None:
+def test_templateflow_consumers_use_nfs_cache() -> None:
     catalog = builtin_executor_catalog()
-    for executor_id in ("aslprep", "petprep"):
+    for executor_id in ("aslprep", "petprep", "qsirecon"):
         definition = catalog.by_id(executor_id)
         assert definition.environment["TEMPLATEFLOW_HOME"] == (
             "{work_root}/cache/templateflow"
@@ -122,6 +124,13 @@ def test_structural_derivatives_gate_every_anatomy_dependent_app() -> None:
     assert qsirecon.requires_executor_ids == ("qsiprep",)
     assert "--recon-spec" in qsirecon.command
     assert "dsi_studio_gqi" in qsirecon.command
+    assert "{freesurfer_license}:/fs_license.txt:ro" in qsirecon.command
+    assert "--fs-license-file" in qsirecon.command
+    assert "/fs_license.txt" in qsirecon.command
+    assert "--atlases" in qsirecon.command
+    assert "AAL116" in qsirecon.command
+    assert "--nv" not in qsirecon.command
+    assert "LD_LIBRARY_PATH" not in qsirecon.environment
 
 
 def test_pet_and_asl_reuse_structural_derivatives() -> None:
