@@ -97,8 +97,11 @@ def _manifest(root: Path) -> ManifestDocument:
     )
 
 
-def _compile(root: Path):
+def _compile(root: Path, *, dwi_bvals: str | None = None):
     manifest = _manifest(root)
+    if dwi_bvals is not None:
+        dwi = root / "source" / "P001" / "V1" / "diffusion_dwi.nii.gz"
+        dwi.with_name("diffusion_dwi.bval").write_text(dwi_bvals)
     graph, logical = build_graph_and_plan(manifest, "compiler-test-identity-key")
     layout = RunLayout(
         dataset_id="compiler-test",
@@ -115,6 +118,26 @@ def _compile(root: Path):
         layout,
         builtin_executor_catalog(),
     )
+
+
+def test_qsiprep_selects_shoreline_for_dsi_like_sampling(nfs_tmp: Path) -> None:
+    plan = _compile(
+        nfs_tmp,
+        dwi_bvals="0 50 100 200 300 400 500 600 700 800 900 1000 1100 1200 1300\n",
+    )
+    task = next(item for item in plan.tasks if item.executor_id == "qsiprep")
+    assert task.command[-2:] == ["--hmc-model", "3dSHORE"]
+    assert "--eddy-config" not in task.command
+    assert task.metadata["dwi_sampling"]["selected_hmc_model"] == "3dSHORE"
+    assert task.metadata["dwi_sampling"]["series_evidence"][0]["dsi_like"] is True
+
+
+def test_qsiprep_retains_eddy_for_shelled_sampling(nfs_tmp: Path) -> None:
+    plan = _compile(nfs_tmp, dwi_bvals="0 1000 1000 2000 2000\n")
+    task = next(item for item in plan.tasks if item.executor_id == "qsiprep")
+    assert "--hmc-model" not in task.command
+    assert "--eddy-config" in task.command
+    assert task.metadata["dwi_sampling"]["selected_hmc_model"] == "eddy"
 
 
 def test_compiler_emits_fingerprinted_dependency_dag(nfs_tmp: Path) -> None:

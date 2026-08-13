@@ -112,6 +112,74 @@ def _format_argv(template: tuple[str, ...], values: dict[str, str]) -> list[str]
     return result
 
 
+def _source_bval_path(source_path: str) -> Path:
+    path = Path(source_path)
+    if path.name.endswith(".nii.gz"):
+        return path.with_name(f"{path.name[:-7]}.bval")
+    return path.with_suffix(".bval")
+
+
+def _qsiprep_sampling_strategy(source_paths: list[str]) -> tuple[str, dict[str, Any]]:
+    """Choose Eddy for shelled data and SHORELine for DSI-like q-space sampling.
+
+    FSL Eddy supports single- and multi-shell acquisitions, but not DSI data.  A
+    large number of nominal b-value levels is therefore a deterministic signal
+    to use QSIPrep's 3dSHORE motion model instead.  Nominal levels are rounded
+    to 100 s/mm2 so harmless scanner rounding does not create false shells.
+    """
+
+    evidence: list[dict[str, Any]] = []
+    use_shoreline = False
+    for source_path in source_paths:
+        bval_path = _source_bval_path(source_path)
+        if not bval_path.is_file():
+            continue
+        try:
+            bvals = [float(item) for item in bval_path.read_text(encoding="utf-8").split()]
+        except ValueError as exc:
+            raise ValueError(f"invalid numeric b-values in {bval_path}") from exc
+        nominal_levels = sorted(
+            {
+                int(round(value / 100.0) * 100)
+                for value in bvals
+                if value >= 50 and int(round(value / 100.0) * 100) > 0
+            }
+        )
+        dsi_like = len(nominal_levels) > 6
+        use_shoreline = use_shoreline or dsi_like
+        evidence.append(
+            {
+                "source_bval": str(bval_path),
+                "volume_count": len(bvals),
+                "nominal_nonzero_b_values": nominal_levels,
+                "dsi_like": dsi_like,
+            }
+        )
+    return ("3dSHORE" if use_shoreline else "eddy"), {
+        "selected_hmc_model": "3dSHORE" if use_shoreline else "eddy",
+        "selection_rule": "3dSHORE when any series has more than six nominal nonzero b-values",
+        "series_evidence": evidence,
+    }
+
+
+def _adapt_qsiprep_command(
+    argv: list[str], source_paths: list[str]
+) -> tuple[list[str], dict[str, Any]]:
+    model, evidence = _qsiprep_sampling_strategy(source_paths)
+    if model == "eddy":
+        return argv, evidence
+    adapted: list[str] = []
+    index = 0
+    while index < len(argv):
+        if argv[index] == "--eddy-config":
+            index += 2
+            continue
+        adapted.append(argv[index])
+        index += 1
+    adapted.extend(("--hmc-model", "3dSHORE"))
+    return adapted, evidence
+
+
 def _task_scoped_container_argv(
     argv: list[str],
     definition: ExecutorDefinition,
@@ -412,8 +480,14 @@ def compile_execution_plan(
             )
         values = _format_values(layout, definition, placeholder, context_path)
         payload = placeholder.model_dump(mode="json")
+        rendered_command = _format_argv(definition.command, values)
+        if definition.executor_id == "qsiprep":
+            rendered_command, dwi_sampling = _adapt_qsiprep_command(
+                rendered_command, source_paths
+            )
+            payload["metadata"]["dwi_sampling"] = dwi_sampling
         payload["command"] = _task_scoped_container_argv(
-            _format_argv(definition.command, values), definition, values
+            rendered_command, definition, values
         )
         payload["environment"] = {
             key: value.format(**values) for key, value in definition.environment.items()

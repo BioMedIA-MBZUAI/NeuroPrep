@@ -50,6 +50,12 @@ SPM, TotalSegmentator, EEGLAB, and LCModel are recorded as candidates—not as
 validated executors—until their adapters and reference qualification evidence
 exist.
 
+Within the QSIPrep route, the compiler makes a second deterministic adaptive
+decision from the b-values. Single- and multi-shell data use Eddy, while
+DSI-like sampling uses SHORELine/3dSHORE. The choice is fingerprinted with the
+task and its nominal b-value evidence, so a prompt cannot force a scientifically
+incompatible correction model.
+
 ~~~mermaid
 flowchart TB
     SRC["Immutable files: DICOM, NIfTI, PET, CT, EEG, tables, omics"] --> AD["Dataset adapter"]

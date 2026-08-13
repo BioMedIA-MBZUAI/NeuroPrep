@@ -160,6 +160,11 @@ integrated executors are eligible for selection. Other packages remain explicit
 qualification candidates until their adapters and representative smoke tests
 pass; the agent may plan those tests but cannot silently promote a candidate.
 
+Diffusion planning also inspects measured q-space sampling. Shelled data uses
+GPU Eddy; DSI-like data with more than six nominal nonzero b-value levels uses
+QSIPrep SHORELine (`--hmc-model 3dSHORE`) because FSL Eddy does not support DSI.
+The selected model and b-value evidence are stored in the task metadata.
+
 For an agent review of a manifest, export `NEUROPREP_WORKFLOW=ingest_plan`,
 `NEUROPREP_MANIFEST_PATH`, and a strong `NEUROPREP_IDENTITY_KEY` before
 submitting with `sbatch --export=ALL`.
