@@ -1,0 +1,102 @@
+{
+  "dataset": {
+    "dataset_id": "synthetic-demo",
+    "adapter_id": "generic",
+    "bids_version": "1.11.1",
+    "required_modalities": ["structural_mri_t1w"],
+    "metadata": {"description": "Synthetic non-PHI modality coverage example"}
+  },
+  "records": [
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/T1_MPRAGE.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T09:00:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "MR", "SeriesDescription": "MPRAGE T1w"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/FLAIR.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T09:10:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "MR", "SeriesDescription": "3D T2 FLAIR"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/DWI.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T09:20:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "MR", "SeriesDescription": "multi-shell DWI"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/rest_bold.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T09:40:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "MR", "SeriesDescription": "resting-state BOLD fMRI"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/amyloid_pet.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T11:00:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "PT", "SeriesDescription": "amyloid PET"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/noncontrast_ct.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T12:00:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "CT", "SeriesDescription": "non contrast head CT"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/resting_eeg.edf",
+      "source_subject_id": "P001",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-01-01T13:00:00Z",
+      "file_format": "EDF",
+      "metadata": {"Modality": "EEG", "RecordingType": "resting EEG"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V2/T1_MPRAGE.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V2",
+      "acquisition_time": "2027-01-01T09:00:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "MR", "SeriesDescription": "MPRAGE T1w"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V2/localizer.dcm",
+      "source_subject_id": "P001",
+      "source_session_id": "V2",
+      "acquisition_time": "2027-01-01T08:55:00Z",
+      "file_format": "DICOM",
+      "metadata": {"Modality": "MR", "SeriesDescription": "unknown localizer"}
+    },
+    {
+      "dataset_id": "synthetic-demo",
+      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P002/V1/vendor_unknown.bin",
+      "source_subject_id": "P002",
+      "source_session_id": "V1",
+      "acquisition_time": "2026-02-01T09:00:00Z",
+      "file_format": "binary",
+      "metadata": {"Modality": "UNKNOWN"}
+    }
+  ],
+  "explicit_identity_crosswalk": {}
+}

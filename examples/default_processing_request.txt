@@ -1,0 +1,5 @@
+Process every detected modality and every longitudinal visit with strict BIDS,
+artifact, QC, model-ready-index, and tensor-index validation. Prefer established,
+reproducible packages, use the allocated GPU when supported, preserve all source
+data and completed derivatives, quarantine ambiguity, and fail closed when
+scientific metadata or qualification evidence is insufficient.

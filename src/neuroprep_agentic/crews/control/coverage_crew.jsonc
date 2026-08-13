@@ -1,0 +1,24 @@
+{
+  "name": "Dataset-Agnostic NeuroPrep Coverage Crew",
+  "agents": ["coverage_architect", "central_orchestrator"],
+  "tasks": [
+    {
+      "name": "inventory_coverage",
+      "description": "Use the NeuroPrep plugin coverage inventory exactly once. Report every dataset adapter and modality plugin, grouped by BIDS core, extension, provisional, or passthrough support. The request is: {request}",
+      "expected_output": "An exact registry inventory with no inferred coverage.",
+      "agent": "coverage_architect"
+    },
+    {
+      "name": "orchestrate_coverage",
+      "description": "Write advisory architecture commentary based on the prior inventory. Do not reproduce or reclassify the plugin list: the deterministic control artifact is authoritative. Explain that dataset adapters do not define scientific pipelines and that task templates do not prove an executor exists.",
+      "expected_output": "Concise Markdown commentary that explicitly defers exact plugin membership and counts to authoritative_evidence in the control artifact.",
+      "agent": "central_orchestrator",
+      "context": ["inventory_coverage"],
+      "output_file": "output/coverage-agent-commentary.md",
+      "markdown": true
+    }
+  ],
+  "process": "sequential",
+  "verbose": true,
+  "memory": false
+}

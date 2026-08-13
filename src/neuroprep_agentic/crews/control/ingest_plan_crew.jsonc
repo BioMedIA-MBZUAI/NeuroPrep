@@ -1,0 +1,24 @@
+{
+  "name": "Dataset-Agnostic NeuroPrep Ingestion Crew",
+  "agents": ["ingestion_curator", "central_orchestrator"],
+  "tasks": [
+    {
+      "name": "build_ingestion_plan",
+      "description": "Use the NeuroPrep manifest ingestion planner exactly once. The configured manifest is {manifest_path}. Report only pseudonymous subjects, longitudinal sessions, modality classifications, BIDS-style mappings, quarantined or unsupported counts, and the deterministic task DAG. The request is: {request}",
+      "expected_output": "An exact ingestion and planning evidence record without source patient identifiers.",
+      "agent": "ingestion_curator"
+    },
+    {
+      "name": "orchestrate_ingestion",
+      "description": "Write advisory ingestion commentary. Do not reproduce, change, or reclassify mappings or the task DAG: authoritative_evidence in the deterministic control artifact is the source of truth. Explain review gates and confirm no source data was changed. Do not execute preprocessing.",
+      "expected_output": "Concise Markdown commentary that defers every exact mapping, count, and task to the authoritative control artifact.",
+      "agent": "central_orchestrator",
+      "context": ["build_ingestion_plan"],
+      "output_file": "output/ingestion-plan-agent-commentary.md",
+      "markdown": true
+    }
+  ],
+  "process": "sequential",
+  "verbose": true,
+  "memory": false
+}

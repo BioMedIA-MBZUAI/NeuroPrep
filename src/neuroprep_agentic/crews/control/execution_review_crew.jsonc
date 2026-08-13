@@ -1,0 +1,31 @@
+{
+  "name": "Dataset-Agnostic NeuroPrep Execution Review Crew",
+  "agents": ["execution_auditor", "recovery_planner", "central_orchestrator"],
+  "tasks": [
+    {
+      "name": "audit_execution_plan",
+      "description": "Use the deterministic execution plan reviewer exactly once. Report exact executor, resource, dependency, missing image, missing executable, and missing metadata evidence. Do not submit or execute anything. The request is: {request}",
+      "expected_output": "An exact execution-plan and preflight evidence record.",
+      "agent": "execution_auditor"
+    },
+    {
+      "name": "review_recovery_policy",
+      "description": "Evaluate recovery boundaries using the mutation policy. Never retry an unverified failure, never alter completed derivatives, and never present a proposed action as executed.",
+      "expected_output": "A concise advisory recovery policy with no claimed mutations.",
+      "agent": "recovery_planner",
+      "context": ["audit_execution_plan"]
+    },
+    {
+      "name": "central_execution_review",
+      "description": "As central orchestrator, summarize readiness and blockers from deterministic evidence. The fingerprinted plan, state database, worker leases, validators, and preflight remain authoritative. You cannot alter mappings, commands, dependencies, scientific metadata, or completion state.",
+      "expected_output": "Concise Markdown readiness commentary that cites deterministic evidence and labels all recommendations advisory.",
+      "agent": "central_orchestrator",
+      "context": ["audit_execution_plan", "review_recovery_policy"],
+      "output_file": "output/execution-review-agent-commentary.md",
+      "markdown": true
+    }
+  ],
+  "process": "sequential",
+  "verbose": true,
+  "memory": false
+}

@@ -1,0 +1,55 @@
+#!/usr/bin/env sh
+set -eu
+
+# QSIPrep 26.0.0 requests this legacy name, while its image ships eddy_cuda11.0.
+# Run the requested configuration first. A CUDA eddy build used on the cluster
+# has one narrow outlier-replacement failure; only that exact signature may be
+# retried without --repol. All other failures remain fail-closed.
+
+if [ -n "${NEUROPREP_EDDY_LOCK:-}" ]; then
+    exec 9>"${NEUROPREP_EDDY_LOCK}"
+    flock -x 9
+fi
+
+real_eddy=/app/.pixi/envs/qsiprep/bin/eddy_cuda11.0
+stdout_log=$(mktemp /tmp/neuroprep-eddy-stdout.XXXXXX)
+stderr_log=$(mktemp /tmp/neuroprep-eddy-stderr.XXXXXX)
+trap 'rm -f "$stdout_log" "$stderr_log"' EXIT HUP INT TERM
+
+set +e
+"$real_eddy" "$@" >"$stdout_log" 2>"$stderr_log"
+return_code=$?
+set -e
+cat "$stdout_log"
+cat "$stderr_log" >&2
+
+if [ "$return_code" -eq 0 ]; then
+    exit 0
+fi
+if ! grep -q "ReplacementManager::Update: Mismatched DiffStatsVector" "$stdout_log" \
+    "$stderr_log"; then
+    exit "$return_code"
+fi
+
+has_repol=false
+for argument in "$@"; do
+    if [ "$argument" = "--repol" ]; then
+        has_repol=true
+        break
+    fi
+done
+if [ "$has_repol" != true ]; then
+    exit "$return_code"
+fi
+
+echo "NEUROPREP_EDDY_FALLBACK: exact DiffStatsVector failure; retrying without --repol" >&2
+set -- "$@" __neuroprep_end__
+while [ "$1" != "__neuroprep_end__" ]; do
+    argument=$1
+    shift
+    if [ "$argument" != "--repol" ]; then
+        set -- "$@" "$argument"
+    fi
+done
+shift
+exec "$real_eddy" "$@"
