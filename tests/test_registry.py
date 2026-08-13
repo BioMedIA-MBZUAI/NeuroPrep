@@ -96,6 +96,9 @@ def test_oasis3_adapter_normalizes_documented_asl_and_legacy_pet_metadata() -> N
     )
     assert asl.metadata["ArterialSpinLabelingType"] == "PASL"
     assert asl.metadata["PostLabelingDelay"] == 1.9
+    assert asl.metadata["BolusCutOffFlag"] is True
+    assert asl.metadata["BolusCutOffTechnique"] == "Q2TIPS"
+    assert asl.metadata["BolusCutOffDelayTime"] == [0.7, 1.9]
     assert asl.metadata["M0Type"] == "Included"
     pet = adapter.normalize(
         SourceRecord(
@@ -119,3 +122,24 @@ def test_oasis3_adapter_normalizes_documented_asl_and_legacy_pet_metadata() -> N
     assert pet.metadata["ReconMethodParameterLabels"] == ["n/a"]
     assert pet.metadata["ReconMethodParameterValues"] == [0]
     assert pet.metadata["ReconFilterType"] == ["n/a"]
+
+
+def test_oasis3_adapter_does_not_infer_q2tips_for_unmatched_asl_protocol() -> None:
+    adapter = builtin_registry().dataset_adapter("oasis3")
+    unmatched = adapter.normalize(
+        SourceRecord(
+            dataset_id="oasis3",
+            source_path="/source/sub_asl.nii.gz",
+            source_subject_id="OAS30001",
+            metadata={
+                "Modality": "MR",
+                "SeriesDescription": "Axial ASL",
+                "PulseSequenceDetails": "research_pasl",
+                "DeviceSerialNumber": "51010",
+                "SoftwareVersions": "syngo_MR_B18P",
+                "BolusCutOffFlag": False,
+            },
+        )
+    )
+    assert unmatched.metadata["BolusCutOffFlag"] is False
+    assert "BolusCutOffTechnique" not in unmatched.metadata

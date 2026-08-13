@@ -93,12 +93,23 @@ class Oasis3DatasetAdapter(DeclarativeDatasetAdapter):
         if "asl" in series or "pasl" in series:
             scanner = str(metadata.get("DeviceSerialNumber") or "")
             software = str(metadata.get("SoftwareVersions") or "")
-            if scanner == "51010" and software in {"syngo_MR_B18P", "syngo_MR_B20P"}:
+            oasis3_q2tips_protocols = {
+                ("51010", "syngo_MR_B18P"): (0.7, 1.9),
+                ("51010", "syngo_MR_B20P"): (0.7, 1.9),
+                ("35177", "syngo_MR_B17P"): (0.7, 1.9),
+                ("35248", "syngo_MR_B17P"): (0.7, 1.8),
+            }
+            inversion_times = oasis3_q2tips_protocols.get((scanner, software))
+            is_siemens_product_pasl = "ep2d_pasl" in series
+            if inversion_times is not None and is_siemens_product_pasl:
+                ti1, ti2 = inversion_times
                 metadata.update(
                     {
                         "ArterialSpinLabelingType": "PASL",
-                        "PostLabelingDelay": 1.9,
-                        "BolusCutOffFlag": False,
+                        "PostLabelingDelay": ti2,
+                        "BolusCutOffFlag": True,
+                        "BolusCutOffTechnique": "Q2TIPS",
+                        "BolusCutOffDelayTime": [ti1, ti2],
                         "BackgroundSuppression": False,
                         "M0Type": "Included",
                         "RepetitionTimePreparation": metadata.get("RepetitionTime"),
@@ -106,8 +117,10 @@ class Oasis3DatasetAdapter(DeclarativeDatasetAdapter):
                     }
                 )
                 derivations["ASLProtocol"] = (
-                    "OASIS-3 Imaging Data Dictionary v2.3 Table 7: scanner 51010, "
-                    f"{software}, TI1=0.7 s, TI2=1.9 s, PASL, no background suppression"
+                    f"OASIS-3 Imaging Data Dictionary v2.3 Table 7: scanner {scanner}, "
+                    f"{software}, TI1={ti1} s, TI2={ti2} s, PASL, no background suppression; "
+                    "Siemens ep2d_pasl is the product PICORE Q2TIPS sequence, so the "
+                    "documented inversion times are encoded as the Q2TIPS cutoff interval"
                 )
 
         if derivations:
