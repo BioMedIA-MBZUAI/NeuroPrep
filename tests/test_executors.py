@@ -123,6 +123,11 @@ def test_petprep_handles_multiprocessing_cleanup_on_nfs_tmp() -> None:
     command = " ".join(builtin_executor_catalog().by_id("petprep").command)
     assert "petprep_sitecustomize.py" in command
     assert "/opt/conda/envs/petprep/lib/python3.12/site-packages/sitecustomize.py:ro" in command
+    assert "petprep_nfs_linear.yaml:/petprep-nfs-linear.yaml:ro" in command
+    assert "--use-plugin /petprep-nfs-linear.yaml" in command
+    assert "--omp-nthreads 1" in command
+    assert "--stop-on-first-crash" in command
+    assert "--notrack" in command
 
 
 def test_native_spatial_routes_use_pinned_container_toolchain() -> None:

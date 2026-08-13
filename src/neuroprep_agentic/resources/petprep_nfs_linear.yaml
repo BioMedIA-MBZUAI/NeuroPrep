@@ -1,0 +1,5 @@
+# PETPrep 0.0.8's MultiProc plugin may silently terminate while cleaning
+# multiprocessing managers on NFS.  The Linear plugin is deterministic, avoids
+# that unsafe manager lifecycle, and preserves the exact scientific workflow.
+plugin: Linear
+plugin_args: {}

@@ -708,6 +708,11 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                     "petprep_sitecustomize.py:/opt/conda/envs/petprep/lib/python3.12/"
                     "site-packages/sitecustomize.py:ro"
                 ),
+                "--bind",
+                (
+                    "{agentic_project}/src/neuroprep_agentic/resources/"
+                    "petprep_nfs_linear.yaml:/petprep-nfs-linear.yaml:ro"
+                ),
                 "{image}",
                 "/data",
                 "/out/petprep",
@@ -724,6 +729,12 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "smriprep=/out/smriprep",
                 "--seg",
                 "HOCPA",
+                "--use-plugin",
+                "/petprep-nfs-linear.yaml",
+                "--omp-nthreads",
+                "1",
+                "--stop-on-first-crash",
+                "--notrack",
                 "--level",
                 "full",
                 "--output-spaces",
