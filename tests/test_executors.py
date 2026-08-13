@@ -103,11 +103,20 @@ def test_templateflow_consumers_use_nfs_cache() -> None:
 
 def test_pet_and_asl_reuse_anatomical_derivatives_without_duplicate_reconall() -> None:
     catalog = builtin_executor_catalog()
-    for executor_id in ("aslprep", "petprep"):
-        definition = catalog.by_id(executor_id)
-        assert "--derivatives" in definition.command
-        assert "smriprep=/out/smriprep" in definition.command
-        assert "--fs-no-reconall" in definition.command
+    aslprep = catalog.by_id("aslprep")
+    assert "--derivatives" in aslprep.command
+    assert "smriprep=/out/smriprep" in aslprep.command
+    assert "--fs-no-reconall" in aslprep.command
+
+    petprep = catalog.by_id("petprep")
+    assert "--derivatives" in petprep.command
+    assert "smriprep=/out/smriprep" in petprep.command
+    assert "--fs-no-reconall" not in petprep.command
+    assert "--fs-subjects-dir" in petprep.command
+    assert "/out/deepprep/sub-{subject}/Recon" in petprep.command
+    assert "--seg" in petprep.command
+    assert "HOCPA" in petprep.command
+    assert petprep.requires_executor_ids == ("smriprep", "deepprep")
 
 
 def test_petprep_handles_multiprocessing_cleanup_on_nfs_tmp() -> None:
@@ -131,8 +140,9 @@ def test_structural_derivatives_gate_every_anatomy_dependent_app() -> None:
     catalog = builtin_executor_catalog()
     assert catalog.by_id("smriprep").stages == ("anat_preprocess",)
     assert catalog.by_id("deepprep").stages == ("anat_segment",)
-    for executor_id in ("deepprep", "fmriprep", "qsiprep", "petprep", "aslprep"):
+    for executor_id in ("deepprep", "fmriprep", "qsiprep", "aslprep"):
         assert catalog.by_id(executor_id).requires_executor_ids == ("smriprep",)
+    assert catalog.by_id("petprep").requires_executor_ids == ("smriprep", "deepprep")
     assert catalog.by_id("xcp-d").requires_executor_ids == ("fmriprep",)
     assert "/out/fmriprep" in catalog.by_id("xcp-d").command
     qsirecon = catalog.by_id("qsirecon")

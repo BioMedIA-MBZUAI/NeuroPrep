@@ -30,11 +30,13 @@ def _manifest(root: Path) -> ManifestDocument:
     t1 = root / "source" / "P001" / "V1" / "T1w.nii.gz"
     bold = root / "source" / "P001" / "V1" / "rest_bold.nii.gz"
     dwi = root / "source" / "P001" / "V1" / "diffusion_dwi.nii.gz"
+    pet = root / "source" / "P001" / "V1" / "amyloid_pet.nii.gz"
     eeg = root / "source" / "P001" / "V1" / "rest_eeg.edf"
     t1.parent.mkdir(parents=True)
     t1.write_bytes(b"nifti-test")
     bold.write_bytes(b"nifti-test")
     dwi.write_bytes(b"nifti-test")
+    pet.write_bytes(b"nifti-test")
     eeg.write_bytes(b"edf-test")
     return ManifestDocument.model_validate(
         {
@@ -79,6 +81,19 @@ def _manifest(root: Path) -> ManifestDocument:
                         "SeriesDescription": "diffusion DWI",
                         "PhaseEncodingDirection": "j-",
                         "TotalReadoutTime": 0.08,
+                    },
+                },
+                {
+                    "dataset_id": "compiler-test",
+                    "source_path": str(pet),
+                    "source_subject_id": "P001",
+                    "source_session_id": "V1",
+                    "file_format": "NIfTI",
+                    "metadata": {
+                        "Modality": "PT",
+                        "SeriesDescription": "amyloid PET",
+                        "TracerName": "florbetapir",
+                        "Units": "Bq/mL",
                     },
                 },
                 {
@@ -178,6 +193,9 @@ def test_compiler_emits_fingerprinted_dependency_dag(nfs_tmp: Path) -> None:
     for executor_id in ("fmriprep", "qsiprep"):
         task = next(task for task in plan.tasks if task.executor_id == executor_id)
         assert smriprep.task_id in task.depends_on
+    petprep = next(task for task in plan.tasks if task.executor_id == "petprep")
+    assert smriprep.task_id in petprep.depends_on
+    assert deepprep.task_id in petprep.depends_on
     xcpd = next(task for task in plan.tasks if task.executor_id == "xcp-d")
     fmriprep = next(task for task in plan.tasks if task.executor_id == "fmriprep")
     assert fmriprep.task_id in xcpd.depends_on
