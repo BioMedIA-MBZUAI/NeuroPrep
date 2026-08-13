@@ -64,6 +64,19 @@ def test_deepprep_is_offline_and_uses_work_scoped_nextflow() -> None:
     assert "{task_work_dir}/deepprep-bids:/data:ro" in definition.command
     assert "{bids_root}:/source-data:ro" in definition.command
     assert definition.environment["LD_LIBRARY_PATH"].startswith("/lib/x86_64-linux-gnu")
+    patterns = {
+        pattern
+        for requirement in definition.artifacts
+        for pattern in requirement.patterns
+    }
+    assert patterns == {
+        "deepprep/sub-{subject}/Recon/sub-{subject}/mri/T1.mgz",
+        "deepprep/sub-{subject}/Recon/sub-{subject}/mri/brainmask.mgz",
+        "deepprep/sub-{subject}/Recon/sub-{subject}/mri/aparc+aseg.mgz",
+        "deepprep/sub-{subject}/Recon/sub-{subject}/surf/lh.white",
+        "deepprep/sub-{subject}/Recon/sub-{subject}/surf/rh.white",
+        "deepprep/sub-{subject}/QC/sub-{subject}/sub-{subject}.html",
+    }
 
 
 def test_smriprep_019_uses_only_supported_cli_flags() -> None:
@@ -74,6 +87,16 @@ def test_smriprep_019_uses_only_supported_cli_flags() -> None:
     assert definition.command[output_index] == "/out"
     assert "{task_work_dir}/smriprep-bids:/data:ro" in definition.command
     assert "{bids_root}:/source-data:ro" in definition.command
+
+
+def test_aslprep_and_petprep_use_nfs_templateflow_cache() -> None:
+    catalog = builtin_executor_catalog()
+    for executor_id in ("aslprep", "petprep"):
+        definition = catalog.by_id(executor_id)
+        assert definition.environment["TEMPLATEFLOW_HOME"] == (
+            "{work_root}/cache/templateflow"
+        )
+        assert definition.environment["XDG_CACHE_HOME"] == "{work_root}/cache/xdg"
 
 
 def test_native_spatial_routes_use_pinned_container_toolchain() -> None:

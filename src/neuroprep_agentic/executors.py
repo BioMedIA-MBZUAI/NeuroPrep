@@ -214,8 +214,30 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 ),
             },
             artifacts=(
-                artifact("preprocessed_t1w", "deepprep/sub-{subject}/**/*T1w.nii.gz"),
-                artifact("brain_mask", "deepprep/sub-{subject}/**/*mask.nii.gz"),
+                artifact(
+                    "preprocessed_t1w",
+                    "deepprep/sub-{subject}/Recon/sub-{subject}/mri/T1.mgz",
+                ),
+                artifact(
+                    "brain_mask",
+                    "deepprep/sub-{subject}/Recon/sub-{subject}/mri/brainmask.mgz",
+                ),
+                artifact(
+                    "segmentation",
+                    "deepprep/sub-{subject}/Recon/sub-{subject}/mri/aparc+aseg.mgz",
+                ),
+                artifact(
+                    "left_white_surface",
+                    "deepprep/sub-{subject}/Recon/sub-{subject}/surf/lh.white",
+                ),
+                artifact(
+                    "right_white_surface",
+                    "deepprep/sub-{subject}/Recon/sub-{subject}/surf/rh.white",
+                ),
+                artifact(
+                    "qc_report",
+                    "deepprep/sub-{subject}/QC/sub-{subject}/sub-{subject}.html",
+                ),
             ),
             source="https://github.com/pBFSLab/DeepPrep",
             notes="Offline network isolation is mandatory; FreeSurfer license is required.",
@@ -641,6 +663,10 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "MNI152NLin2009cAsym:res-2",
                 "--skip-bids-validation",
             ),
+            environment={
+                "TEMPLATEFLOW_HOME": "{work_root}/cache/templateflow",
+                "XDG_CACHE_HOME": "{work_root}/cache/xdg",
+            },
             artifacts=(artifact("cbf_map", "aslprep/sub-{subject}/**/*cbf.nii.gz"),),
             required_metadata=("ArterialSpinLabelingType",),
             source="https://github.com/PennLINC/aslprep",
@@ -686,6 +712,10 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "T1w",
                 "MNI152NLin2009cAsym:res-2",
             ),
+            environment={
+                "TEMPLATEFLOW_HOME": "{work_root}/cache/templateflow",
+                "XDG_CACHE_HOME": "{work_root}/cache/xdg",
+            },
             artifacts=(artifact("preprocessed_pet", "petprep/sub-{subject}/**/*pet.nii.gz"),),
             required_metadata=("TracerName", "Units"),
             source="https://github.com/nipreps/petprep",
