@@ -702,6 +702,12 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "{work_root}:/work",
                 "--bind",
                 "{freesurfer_license}:/fs_license.txt:ro",
+                "--bind",
+                (
+                    "{agentic_project}/src/neuroprep_agentic/resources/"
+                    "petprep_sitecustomize.py:/opt/conda/envs/petprep/lib/python3.12/"
+                    "site-packages/sitecustomize.py:ro"
+                ),
                 "{image}",
                 "/data",
                 "/out/petprep",

@@ -110,6 +110,12 @@ def test_pet_and_asl_reuse_anatomical_derivatives_without_duplicate_reconall() -
         assert "--fs-no-reconall" in definition.command
 
 
+def test_petprep_handles_multiprocessing_cleanup_on_nfs_tmp() -> None:
+    command = " ".join(builtin_executor_catalog().by_id("petprep").command)
+    assert "petprep_sitecustomize.py" in command
+    assert "/opt/conda/envs/petprep/lib/python3.12/site-packages/sitecustomize.py:ro" in command
+
+
 def test_native_spatial_routes_use_pinned_container_toolchain() -> None:
     catalog = builtin_executor_catalog()
     for executor_id in ("neuroprep-spatial", "neuroprep-susceptibility"):

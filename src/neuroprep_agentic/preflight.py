@@ -100,6 +100,14 @@ def preflight_execution_plan(
             if not valid:
                 missing_runtime_assets.add(str(path))
 
+    if any(task.executor_id == "petprep" for task in plan.tasks):
+        sitecustomize = (
+            Path(plan.layout.agentic_project)
+            / "src/neuroprep_agentic/resources/petprep_sitecustomize.py"
+        )
+        if not sitecustomize.is_file() or sitecustomize.stat().st_size == 0:
+            missing_runtime_assets.add(str(sitecustomize))
+
     if any(task.executor_id == "fsl-mrs" for task in plan.tasks):
         fsl_mrs_root = Path("/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/fsl-mrs-2.4.17")
         for name in ("fsl_mrs", "fsl_mrs_preproc", "spec2nii"):
