@@ -101,6 +101,15 @@ def test_templateflow_consumers_use_nfs_cache() -> None:
         assert definition.environment["XDG_CACHE_HOME"] == "{work_root}/cache/xdg"
 
 
+def test_pet_and_asl_reuse_anatomical_derivatives_without_duplicate_reconall() -> None:
+    catalog = builtin_executor_catalog()
+    for executor_id in ("aslprep", "petprep"):
+        definition = catalog.by_id(executor_id)
+        assert "--derivatives" in definition.command
+        assert "smriprep=/out/smriprep" in definition.command
+        assert "--fs-no-reconall" in definition.command
+
+
 def test_native_spatial_routes_use_pinned_container_toolchain() -> None:
     catalog = builtin_executor_catalog()
     for executor_id in ("neuroprep-spatial", "neuroprep-susceptibility"):
