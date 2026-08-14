@@ -38,4 +38,4 @@ _CrewAITokenManager._get_secure_storage_path = staticmethod(_crewai_secure_stora
 from .registry import PluginRegistry, builtin_registry  # noqa: E402
 
 __all__ = ["PluginRegistry", "builtin_registry"]
-__version__ = "0.2.0"
+__version__ = "0.3.0"

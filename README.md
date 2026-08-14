@@ -47,9 +47,12 @@ completion decisions. Agents review that evidence through policy gates.
 
 Prompt instructions are supported, but deliberately constrained. A prompt can
 select an objective, desired output families, and allowlisted package
-preferences. It cannot introduce commands, paths, images, metadata values,
-scheduler directives, or bypass BIDS/artifact/QC gates. The typed policy and its
-digest are embedded in every compiled execution plan.
+preferences. The `prompt-run` command separately extracts the source and output
+roots with deterministic code, accepts only the two approved cluster namespaces,
+inventories the source, builds a manifest, compiles the full execution DAG, and
+can initialize or submit it. The LLM cannot introduce commands, images, metadata
+values, scheduler directives, or bypass BIDS/artifact/QC gates. Both the typed
+policy and its digest are embedded in every compiled execution plan.
 
 ## Invariants
 
@@ -95,6 +98,17 @@ All paths must be under `/nfs-stor/salma.hassan` or `/l/users/salma.hassan`.
 ```bash
 neuroprep-agentic hardware-profile \
   --output /nfs-stor/salma.hassan/run/hardware.json
+
+# One prompt can bind X/Y, discover all supported inputs, consolidate patients
+# and visits, compile the executable DAG, preflight it, and initialize state.
+neuroprep-agentic prompt-run \
+  --request 'My data is at /nfs-stor/salma.hassan/source; preprocess all modalities and longitudinal visits and save to /nfs-stor/salma.hassan/run' \
+  --freesurfer-license /nfs-stor/salma.hassan/licenses/freesurfer.txt \
+  --initialize
+
+# Add --submit to launch central review, workers, and the final release gate.
+# Omit --initialize/--submit for a read-only-source planning and preflight run.
+
 neuroprep-agentic prompt-policy \
   --request-file /nfs-stor/salma.hassan/run/request.txt \
   --hardware-profile /nfs-stor/salma.hassan/run/hardware.json \
@@ -153,6 +167,14 @@ sbatch --export=ALL,\
 NEUROPREP_REQUEST_FILE=/nfs-stor/salma.hassan/run/request.txt,\
 NEUROPREP_POLICY_OUTPUT=/nfs-stor/salma.hassan/run/policy.json \
   scripts/slurm/neuroprep_prompt_policy_gpu.sbatch
+
+# Run the complete prompt compiler on a scheduled GPU. Set
+# NEUROPREP_SUBMIT=true only when the compiled run should be launched.
+sbatch --export=ALL,\
+NEUROPREP_REQUEST_FILE=/nfs-stor/salma.hassan/run/request.txt,\
+NEUROPREP_FREESURFER_LICENSE=/nfs-stor/salma.hassan/licenses/freesurfer.txt,\
+NEUROPREP_SUBMIT=false \
+  scripts/slurm/neuroprep_prompt_run_gpu.sbatch
 ```
 
 The backend portfolio records multiple packages per capability. Only pinned,

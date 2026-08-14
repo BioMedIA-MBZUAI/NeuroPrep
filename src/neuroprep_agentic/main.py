@@ -23,6 +23,7 @@ from .policy import (
     plan_backends,
 )
 from .preflight import preflight_execution_plan
+from .prompt_run import PromptPathBinding, prepare_prompt_run
 from .qualification import compile_backend_evidence
 from .registry import builtin_registry
 from .release import finalize_execution_run
@@ -84,6 +85,37 @@ def cli() -> None:
     request_group.add_argument("--request-file")
     prompt_policy.add_argument("--hardware-profile")
     prompt_policy.add_argument("--output", required=True)
+
+    prompt_run = subparsers.add_parser(
+        "prompt-run",
+        help="Bind prompt paths, inventory a dataset, compile a run, and optionally submit it",
+    )
+    prompt_run_request = prompt_run.add_mutually_exclusive_group(required=True)
+    prompt_run_request.add_argument("--request")
+    prompt_run_request.add_argument("--request-file")
+    prompt_run.add_argument("--source-root")
+    prompt_run.add_argument("--output-root")
+    prompt_run.add_argument("--manifest")
+    prompt_run.add_argument("--dataset-id")
+    prompt_run.add_argument("--adapter-id")
+    prompt_run.add_argument("--identity-key", default=os.getenv("NEUROPREP_IDENTITY_KEY"))
+    prompt_run.add_argument("--hardware-profile")
+    prompt_run.add_argument("--backend-evidence")
+    prompt_run.add_argument(
+        "--freesurfer-license",
+        default=os.getenv("FS_LICENSE") or os.getenv("FREESURFER_LICENSE"),
+    )
+    prompt_run.add_argument("--execute-optional", action="store_true")
+    prompt_run.add_argument("--allow-quarantine", action="store_true")
+    prompt_run.add_argument("--allow-unsupported", action="store_true")
+    prompt_run.add_argument("--initialize", action="store_true")
+    prompt_run.add_argument("--submit", action="store_true")
+    prompt_run.add_argument(
+        "--gpu-workers",
+        type=int,
+        default=2,
+        help="GPU worker count passed to the Slurm launcher when --submit is used",
+    )
 
     backend_plan = subparsers.add_parser(
         "backend-plan", help="Select integrated backends and plan bounded qualification tests"
@@ -204,6 +236,36 @@ def cli() -> None:
         profile = load_hardware_profile(args.hardware_profile)
         policy = compile_prompt_policy(request, profile)
         _write_or_print(policy.model_dump(mode="json"), args.output)
+    elif args.command == "prompt-run":
+        if args.request_file:
+            request_path = validated_cluster_path(args.request_file, must_exist=True)
+            request = request_path.read_text(encoding="utf-8")
+        else:
+            request = args.request
+        try:
+            result = prepare_prompt_run(
+                request,
+                source_root=args.source_root,
+                output_root=args.output_root,
+                manifest_path=args.manifest,
+                dataset_id=args.dataset_id,
+                adapter_id=args.adapter_id,
+                identity_key=args.identity_key,
+                hardware_profile=load_hardware_profile(args.hardware_profile),
+                backend_evidence=args.backend_evidence,
+                freesurfer_license=args.freesurfer_license,
+                execute_optional=args.execute_optional,
+                allow_quarantine=args.allow_quarantine,
+                allow_unsupported=args.allow_unsupported,
+                initialize=args.initialize,
+                submit=args.submit,
+                gpu_workers=args.gpu_workers,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            parser.error(str(exc))
+        _write_or_print(result, None)
+        if not result["ready"]:
+            raise SystemExit(1)
     elif args.command == "backend-plan":
         policy = load_policy(args.policy)
         profile = load_hardware_profile(args.hardware_profile)
@@ -367,6 +429,7 @@ def cli() -> None:
             "run_policy": RunPolicy.model_json_schema(),
             "hardware_profile": HardwareProfile.model_json_schema(),
             "backend_plan": BackendPlan.model_json_schema(),
+            "prompt_path_binding": PromptPathBinding.model_json_schema(),
         }
         _write_or_print(payload, args.output)
     elif args.command == "validate-control-artifact":

@@ -58,7 +58,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
     definitions: list[ExecutorDefinition] = [
         native(
             "neuroprep-bids-stage",
-            "0.2.0",
+            "0.3.0",
             ExecutionScope.ACQUISITION,
             ("core.bids",),
             ("bids_stage",),
@@ -67,7 +67,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
         ),
         native(
             "neuroprep-bids-init",
-            "0.2.0",
+            "0.3.0",
             ExecutionScope.DATASET,
             ("core.bids",),
             ("bids_init",),
@@ -897,7 +897,7 @@ def _native_and_sensor_definitions(v4: str) -> list[ExecutorDefinition]:
         result.append(
             native(
                 executor_id,
-                "0.2.0",
+                "0.3.0",
                 scope,
                 plugin_ids,
                 stages,

@@ -139,7 +139,7 @@ def stage_bids(task: ExecutableTask) -> dict[str, Any]:
     sidecar.update(
         {
             "SourceAcquisitionID": task.acquisition_ids[0],
-            "NeuroPrepAgenticVersion": "0.2.0",
+            "NeuroPrepAgenticVersion": "0.3.0",
         }
     )
     if target.name.endswith((".nii", ".nii.gz")) or sidecar:
@@ -228,7 +228,7 @@ def _stage_tabular_source(source: Path, target: Path, task: ExecutableTask) -> d
         **_safe_sidecar(dict(task.metadata.get("source_metadata") or {})),
         **_safe_sidecar(dict(task.metadata.get("bids_sidecar") or {})),
         "SourceAcquisitionID": task.acquisition_ids[0],
-        "NeuroPrepAgenticVersion": "0.2.0",
+        "NeuroPrepAgenticVersion": "0.3.0",
         "ConversionSoftware": "pandas",
     }
     _write_json(_sidecar_path(target), sidecar)
@@ -259,7 +259,7 @@ def _stage_nifti_convert(source: Path, target: Path, task: ExecutableTask) -> di
             **_safe_sidecar(dict(task.metadata.get("source_metadata") or {})),
             **_safe_sidecar(dict(task.metadata.get("bids_sidecar") or {})),
             "SourceAcquisitionID": task.acquisition_ids[0],
-            "NeuroPrepAgenticVersion": "0.2.0",
+            "NeuroPrepAgenticVersion": "0.3.0",
             "ConversionSoftware": "nibabel",
         },
     )
@@ -332,7 +332,7 @@ def _stage_mrs_source(source: Path, target: Path, task: ExecutableTask) -> dict[
     sidecar.update(
         {
             "SourceAcquisitionID": task.acquisition_ids[0],
-            "NeuroPrepAgenticVersion": "0.2.0",
+            "NeuroPrepAgenticVersion": "0.3.0",
             "ConversionSoftware": "spec2nii",
             "ConversionSoftwareVersion": "0.8.15",
         }
@@ -397,7 +397,7 @@ def _bids_init(task: ExecutableTask) -> dict[str, Any]:
             "GeneratedBy": [
                 {
                     "Name": "NeuroPrep-agentic",
-                    "Version": "0.2.0",
+                    "Version": "0.3.0",
                 }
             ],
         },
