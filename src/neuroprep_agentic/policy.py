@@ -324,10 +324,22 @@ def plan_backends(
     policy: RunPolicy,
     hardware: HardwareProfile,
     evidence: dict[str, str] | None = None,
+    *,
+    required_executor_ids: set[str] | frozenset[str] | None = None,
 ) -> BackendPlan:
     observed = evidence or {}
+    portfolio = builtin_backend_portfolio()
+    if required_executor_ids is not None:
+        active_capabilities = {
+            item.capability
+            for item in portfolio
+            if item.executor_id is not None and item.executor_id in required_executor_ids
+        }
+        portfolio = tuple(
+            item for item in portfolio if item.capability in active_capabilities
+        )
     grouped: dict[str, list[BackendCandidate]] = {}
-    for item in builtin_backend_portfolio():
+    for item in portfolio:
         grouped.setdefault(item.capability, []).append(item)
     decisions: list[BackendDecision] = []
     smoke_tests: list[SmokeTestSpec] = []

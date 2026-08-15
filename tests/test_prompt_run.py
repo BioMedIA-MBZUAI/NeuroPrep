@@ -166,3 +166,8 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     assert (output / "state" / "tasks.sqlite").is_file()
     assert result["state_summary"]["total"] == result["task_count"]
     assert result["state_summary"]["counts"]["pending"] > 0
+    backend_plan = json.loads((output / "backend-plan.json").read_text(encoding="utf-8"))
+    assert {item["capability"] for item in backend_plan["decisions"]} == {
+        "structural_preprocess",
+        "structural_segment",
+    }

@@ -543,16 +543,6 @@ def prepare_prompt_run(
     policy_path = output / "policy.json"
     _write_json(policy_path, policy)
     evidence = _load_evidence(backend_evidence)
-    backend_plan = plan_backends(policy, profile, evidence)
-    backend_path = output / "backend-plan.json"
-    _write_json(backend_path, backend_plan)
-    if not backend_plan.ready:
-        raise ValueError("no integrated hardware-compatible backend for every capability")
-    if submit and backend_plan.smoke_tests:
-        raise ValueError(
-            f"{len(backend_plan.smoke_tests)} backend smoke tests still require evidence; "
-            "run the bounded qualification tasks and pass --backend-evidence before submission"
-        )
 
     if manifest_path:
         manifest = load_manifest(manifest_path)
@@ -607,6 +597,32 @@ def prepare_prompt_run(
         freesurfer_license=freesurfer_license,
         execute_optional=execute_optional,
     )
+    probe_plan = compile_execution_plan(
+        graph,
+        logical_plan,
+        layout,
+        catalog,
+        run_policy=policy.model_dump(mode="json"),
+        policy_digest=policy.digest(),
+        backend_decisions=[],
+        planned_smoke_tests=[],
+    )
+    required_executor_ids = {task.executor_id for task in probe_plan.tasks}
+    backend_plan = plan_backends(
+        policy,
+        profile,
+        evidence,
+        required_executor_ids=required_executor_ids,
+    )
+    backend_path = output / "backend-plan.json"
+    _write_json(backend_path, backend_plan)
+    if not backend_plan.ready:
+        raise ValueError("no integrated hardware-compatible backend for every required capability")
+    if submit and backend_plan.smoke_tests:
+        raise ValueError(
+            f"{len(backend_plan.smoke_tests)} required backend smoke tests still require evidence; "
+            "run the bounded qualification tasks and pass --backend-evidence before submission"
+        )
     plan = compile_execution_plan(
         graph,
         logical_plan,

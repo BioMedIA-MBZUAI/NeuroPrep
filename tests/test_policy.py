@@ -72,6 +72,23 @@ def test_backend_selection_is_hardware_aware_and_plans_bounded_smokes() -> None:
     assert "artifact_contract=pass" in smoke.expected_evidence
 
 
+def test_backend_selection_can_be_scoped_to_required_executors() -> None:
+    plan = plan_backends(
+        RunPolicy(),
+        _gpu(),
+        required_executor_ids={"smriprep", "deepprep", "neuroprep-bids-stage"},
+    )
+
+    assert {item.capability for item in plan.decisions} == {
+        "structural_preprocess",
+        "structural_segment",
+    }
+    assert {item.capability for item in plan.smoke_tests} == {
+        "structural_preprocess",
+        "structural_segment",
+    }
+
+
 def test_failed_smoke_evidence_rejects_backend_fail_closed() -> None:
     policy = RunPolicy()
     plan = plan_backends(policy, _gpu(), {"smoke--dwi_preprocess--qsiprep": "failed"})
