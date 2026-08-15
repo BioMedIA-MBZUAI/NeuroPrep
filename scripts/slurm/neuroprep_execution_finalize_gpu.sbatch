@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
 #SBATCH --time=04:00:00
-#SBATCH --exclude=gpu-03
+#SBATCH --exclude=gpu-03,gpu-05,gpu-50
 #SBATCH --chdir=/nfs-stor/salma.hassan/NeuroPrep-agentic
 #SBATCH --output=/nfs-stor/salma.hassan/NeuroPrep-agentic/logs/%x-%j.out
 #SBATCH --error=/nfs-stor/salma.hassan/NeuroPrep-agentic/logs/%x-%j.err
