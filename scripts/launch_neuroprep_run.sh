@@ -78,6 +78,16 @@ if [ "$PLAN_AGENTIC_PROJECT" != "$APP_ROOT" ]; then
   echo "Execution plan agentic project differs from launcher repository" >&2
   exit 2
 fi
+QUALIFICATION_REQUIRED=$(
+  "$APP_ROOT/.venv/bin/python" -c \
+    'import json,sys; p=json.load(open(sys.argv[1])); print("true" if (p.get("backend_qualification_tests") or p.get("planned_smoke_tests")) else "false")' \
+    "$PLAN"
+)
+if [ "$QUALIFICATION_REQUIRED" = true ] && \
+    [ -z "${NEUROPREP_BACKEND_EVIDENCE_KEY:-}" ]; then
+  echo "Signed backend evidence key is required for this execution plan" >&2
+  exit 2
+fi
 
 STATE=$(
   "$APP_ROOT/.venv/bin/python" -c \
@@ -90,6 +100,7 @@ RELEASE_ROOT=$(
     "$PLAN"
 )
 
+# --export=ALL carries the validated evidence-key path without rendering it.
 REVIEW_JOB=$(
   sbatch --parsable \
     --export=ALL,NEUROPREP_EXECUTION_PLAN_PATH="$PLAN" \

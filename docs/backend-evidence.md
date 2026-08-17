@@ -100,6 +100,13 @@ neuroprep-agentic run-init /nfs-stor/salma.hassan/run/execution-plan.json \
   --backend-evidence-key /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key
 ```
 
+For `prompt-run --submit`, an explicit `--backend-evidence-key` overrides an
+inherited `NEUROPREP_BACKEND_EVIDENCE_KEY`. The selected key path is passed to
+the scheduler and execution-review `run-init` only through the child
+environment; it is not added to the launcher command, returned launch metadata,
+or logs. Plans with qualification requirements fail before submission if no key
+path reaches the launcher.
+
 No evidence is required when the deterministic backend planner produces zero
 target smoke tests. `--agentic-project` takes precedence over
 `NEUROPREP_AGENTIC_PROJECT`, which in turn takes precedence over the historical

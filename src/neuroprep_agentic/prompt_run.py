@@ -475,11 +475,16 @@ def _identity_key(output_root: Path, supplied: str | None) -> tuple[str, str]:
 
 
 def _submit_workers(
-    plan_path: Path, gpu_workers: int, agentic_project: str
+    plan_path: Path,
+    gpu_workers: int,
+    agentic_project: str,
+    backend_evidence_key: str | None = None,
 ) -> dict[str, str]:
     launcher = Path(agentic_project) / "scripts/launch_neuroprep_run.sh"
     environment = os.environ.copy()
     environment["NEUROPREP_AGENTIC_PROJECT"] = agentic_project
+    if backend_evidence_key is not None:
+        environment["NEUROPREP_BACKEND_EVIDENCE_KEY"] = backend_evidence_key
     completed = subprocess.run(
         [str(launcher), str(plan_path), str(gpu_workers)],
         check=False,
@@ -693,7 +698,12 @@ def prepare_prompt_run(
         state.initialize(plan, str(plan_path))
         state_summary = state.summary()
     launch = (
-        _submit_workers(plan_path, gpu_workers, plan.layout.agentic_project)
+        _submit_workers(
+            plan_path,
+            gpu_workers,
+            plan.layout.agentic_project,
+            backend_evidence_key=backend_evidence_key,
+        )
         if submit
         else None
     )

@@ -13,6 +13,11 @@ def test_launcher_reports_partial_scheduler_submissions() -> None:
     assert 'echo "launch_complete=true"' in launcher
     assert "NEUROPREP_AGENTIC_PROJECT" in launcher
     assert "Execution plan agentic project differs from launcher repository" in launcher
+    assert 'p.get("backend_qualification_tests") or p.get("planned_smoke_tests")' in launcher
+    assert "NEUROPREP_BACKEND_EVIDENCE_KEY" in launcher
+    assert "--export=ALL,NEUROPREP_EXECUTION_PLAN_PATH" in launcher
+    assert "--backend-evidence-key" not in launcher
+    assert 'echo "$NEUROPREP_BACKEND_EVIDENCE_KEY"' not in launcher
 
 
 def test_prompt_run_launcher_is_gpu_and_nfs_fail_closed() -> None:
@@ -32,3 +37,12 @@ def test_prompt_run_launcher_is_gpu_and_nfs_fail_closed() -> None:
     assert "optional_value NEUROPREP_AGENTIC_PROJECT --agentic-project" in launcher
     assert "APP_ROOT=${NEUROPREP_AGENTIC_PROJECT:-" in launcher
     assert "must be the exact git repository root" in launcher
+
+
+def test_execution_review_consumes_evidence_key_from_environment_without_argv() -> None:
+    launcher = Path("scripts/slurm/neuroprep_execution_review_gpu.sbatch").read_text()
+
+    assert "NEUROPREP_BACKEND_EVIDENCE_KEY" in launcher
+    assert "Signed backend evidence key is required for run initialization" in launcher
+    assert 'run-init "$NEUROPREP_EXECUTION_PLAN_PATH"' in launcher
+    assert "--backend-evidence-key" not in launcher

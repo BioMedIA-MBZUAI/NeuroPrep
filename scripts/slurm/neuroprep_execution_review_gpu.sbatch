@@ -65,6 +65,16 @@ mkdir -p \
 test -x /usr/bin/singularity
 test -s "$OLLAMA_IMAGE"
 test -s "$NEUROPREP_EXECUTION_PLAN_PATH"
+QUALIFICATION_REQUIRED=$(
+  "$APP_ROOT/.venv/bin/python" -c \
+    'import json,sys; p=json.load(open(sys.argv[1])); print("true" if (p.get("backend_qualification_tests") or p.get("planned_smoke_tests")) else "false")' \
+    "$NEUROPREP_EXECUTION_PLAN_PATH"
+)
+if [ "$QUALIFICATION_REQUIRED" = true ] && \
+    [ -z "${NEUROPREP_BACKEND_EVIDENCE_KEY:-}" ]; then
+  echo "Signed backend evidence key is required for run initialization" >&2
+  exit 2
+fi
 nvidia-smi --query-gpu=name,uuid,memory.total --format=csv,noheader
 "$APP_ROOT/.venv/bin/neuroprep-agentic" prefetch-images \
   "$NEUROPREP_EXECUTION_PLAN_PATH" --execute
@@ -72,6 +82,8 @@ nvidia-smi --query-gpu=name,uuid,memory.total --format=csv,noheader
   "$NEUROPREP_EXECUTION_PLAN_PATH" --execute
 "$APP_ROOT/.venv/bin/neuroprep-agentic" preflight-run \
   "$NEUROPREP_EXECUTION_PLAN_PATH"
+# run-init consumes NEUROPREP_BACKEND_EVIDENCE_KEY through its CLI environment
+# default, keeping the path out of argv and logs.
 "$APP_ROOT/.venv/bin/neuroprep-agentic" run-init "$NEUROPREP_EXECUTION_PLAN_PATH"
 
 OLLAMA_BIND=$CACHE_ROOT/ollama:/root/.ollama

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from neuroprep_agentic import main as main_module
 from neuroprep_agentic import prompt_run
 from neuroprep_agentic.backend_evidence import (
     BackendEvidenceBinding,
@@ -150,6 +151,108 @@ def test_submit_uses_selected_agentic_project_launcher_and_environment(
     assert result["launch_complete"] == "true"
 
 
+def test_submission_key_cli_value_overrides_environment_without_command_disclosure(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
+) -> None:
+    inherited = str(nfs_tmp / "inherited.key")
+    cli_only = str(nfs_tmp / "cli-only.key")
+    observed: dict[str, object] = {}
+    monkeypatch.setenv("NEUROPREP_BACKEND_EVIDENCE_KEY", inherited)
+
+    def fake_run(command, **kwargs):
+        observed["command"] = command
+        observed["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="launch_complete=true\nreview_job=1\nworker_jobs=2\nfinalize_job=3\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(prompt_run.subprocess, "run", fake_run)
+
+    result = prompt_run._submit_workers(
+        nfs_tmp / "plan.json",
+        2,
+        str(nfs_tmp / "project"),
+        backend_evidence_key=cli_only,
+    )
+
+    assert observed["environment"]["NEUROPREP_BACKEND_EVIDENCE_KEY"] == cli_only
+    assert cli_only not in observed["command"]
+    assert cli_only not in json.dumps(result, sort_keys=True)
+
+
+@pytest.mark.parametrize("inherited", ["environment", None])
+def test_submission_key_environment_or_absent_default_is_preserved(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path, inherited: str | None
+) -> None:
+    expected = str(nfs_tmp / "environment.key") if inherited else None
+    if expected is None:
+        monkeypatch.delenv("NEUROPREP_BACKEND_EVIDENCE_KEY", raising=False)
+    else:
+        monkeypatch.setenv("NEUROPREP_BACKEND_EVIDENCE_KEY", expected)
+    observed: dict[str, str] = {}
+
+    def fake_run(command, **kwargs):
+        observed.update(kwargs["env"])
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="launch_complete=true\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(prompt_run.subprocess, "run", fake_run)
+
+    prompt_run._submit_workers(
+        nfs_tmp / "plan.json", 1, str(nfs_tmp / "project")
+    )
+
+    assert observed.get("NEUROPREP_BACKEND_EVIDENCE_KEY") == expected
+
+
+@pytest.mark.parametrize(
+    ("environment_value", "cli_value", "expected"),
+    [
+        (None, "cli-only.key", "cli-only.key"),
+        ("environment.key", "cli-wins.key", "cli-wins.key"),
+        ("environment.key", None, "environment.key"),
+        (None, None, None),
+    ],
+)
+def test_prompt_run_cli_backend_key_precedence_reaches_submit(
+    monkeypatch: pytest.MonkeyPatch,
+    nfs_tmp: Path,
+    environment_value: str | None,
+    cli_value: str | None,
+    expected: str | None,
+) -> None:
+    environment_path = str(nfs_tmp / environment_value) if environment_value else None
+    cli_path = str(nfs_tmp / cli_value) if cli_value else None
+    expected_path = str(nfs_tmp / expected) if expected else None
+    if environment_path is None:
+        monkeypatch.delenv("NEUROPREP_BACKEND_EVIDENCE_KEY", raising=False)
+    else:
+        monkeypatch.setenv("NEUROPREP_BACKEND_EVIDENCE_KEY", environment_path)
+    observed: dict[str, object] = {}
+
+    def fake_prepare(request, **kwargs):
+        observed.update(kwargs)
+        return {"ready": True, "submitted": kwargs["submit"]}
+
+    monkeypatch.setattr(main_module, "prepare_prompt_run", fake_prepare)
+    monkeypatch.setattr(main_module, "load_hardware_profile", lambda _path: None)
+    arguments = ["prompt-run", "--request", "test request", "--submit"]
+    if cli_path is not None:
+        arguments.extend(["--backend-evidence-key", cli_path])
+
+    main_module.cli(arguments)
+
+    assert observed["backend_evidence_key"] == expected_path
+    assert observed["submit"] is True
+
+
 def test_prepare_prompt_run_compiles_a_complete_handoff(
     monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
 ) -> None:
@@ -241,19 +344,43 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
             ),
         )
 
+    monkeypatch.delenv("NEUROPREP_BACKEND_EVIDENCE_KEY", raising=False)
     monkeypatch.setattr(prompt_run, "read_signing_key", lambda _path: b"x" * 32)
     monkeypatch.setattr(prompt_run, "current_git_commit", lambda _path: "4" * 40)
     monkeypatch.setattr(prompt_run, "validate_backend_evidence", verified_evidence)
+    submitted: dict[str, object] = {}
+
+    def fake_submit(plan_path, gpu_workers, agentic_project, backend_evidence_key=None):
+        submitted.update(
+            {
+                "plan_path": plan_path,
+                "gpu_workers": gpu_workers,
+                "agentic_project": agentic_project,
+                "backend_evidence_key": backend_evidence_key,
+            }
+        )
+        return {
+            "launch_complete": "true",
+            "review_job": "1",
+            "worker_jobs": "2",
+            "finalize_job": "3",
+        }
+
+    monkeypatch.setattr(prompt_run, "_submit_workers", fake_submit)
+    cli_only_key = str(nfs_tmp / "signing.key")
     result = prepare_prompt_run(
         f"My data is at {source}; preprocess it and save to {output}",
         hardware_profile=hardware,
         agentic_project=str(agentic_project),
         backend_evidence=str(nfs_tmp / "signed-evidence.json"),
-        backend_evidence_key=str(nfs_tmp / "signing.key"),
-        initialize=True,
+        backend_evidence_key=cli_only_key,
+        submit=True,
     )
 
     assert result["ready"] is True
+    assert result["submitted"] is True
+    assert submitted["backend_evidence_key"] == cli_only_key
+    assert cli_only_key not in json.dumps(result["launch"], sort_keys=True)
     assert result["record_count"] == 1
     assert result["task_count"] > 0
     assert Path(result["execution_plan"]).is_file()
