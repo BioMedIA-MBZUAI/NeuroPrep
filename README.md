@@ -100,11 +100,11 @@ neuroprep-agentic hardware-profile \
   --output /nfs-stor/salma.hassan/run/hardware.json
 
 # One prompt can bind X/Y, discover all supported inputs, consolidate patients
-# and visits, compile the executable DAG, preflight it, and initialize state.
+# and visits, compile the executable DAG, and preflight it. Initialization or
+# submission requires signed evidence when the backend plan has smoke tests.
 neuroprep-agentic prompt-run \
   --request 'My data is at /nfs-stor/salma.hassan/source; preprocess all modalities and longitudinal visits and save to /nfs-stor/salma.hassan/run' \
-  --freesurfer-license /nfs-stor/salma.hassan/licenses/freesurfer.txt \
-  --initialize
+  --freesurfer-license /nfs-stor/salma.hassan/licenses/freesurfer.txt
 
 # Add --submit to launch central review, workers, and the final release gate.
 # Omit --initialize/--submit for a read-only-source planning and preflight run.
@@ -118,8 +118,8 @@ neuroprep-agentic backend-plan \
   --hardware-profile /nfs-stor/salma.hassan/run/hardware.json \
   --output /nfs-stor/salma.hassan/run/backend-plan.json
 
-# After a representative qualification run reaches a terminal state, feed its
-# artifact-backed evidence into the next backend decision.
+# Flat qualification evidence is retained for planning and compatibility only.
+# Production initialization uses the signed workflow in docs/backend-evidence.md.
 neuroprep-agentic qualification-evidence \
   /nfs-stor/salma.hassan/run/execution-plan.json \
   --output /nfs-stor/salma.hassan/run/backend-evidence.json

@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .backend_evidence import BackendEvidenceBinding
 from .settings import validated_cluster_path
 
 
@@ -164,7 +165,9 @@ class ExecutionPlan(BaseModel):
     run_policy: dict[str, Any] = Field(default_factory=dict)
     policy_digest: str | None = None
     backend_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    backend_qualification_tests: list[dict[str, Any]] = Field(default_factory=list)
     planned_smoke_tests: list[dict[str, Any]] = Field(default_factory=list)
+    backend_evidence: BackendEvidenceBinding | None = None
 
 
 class PreflightCheck(BaseModel):

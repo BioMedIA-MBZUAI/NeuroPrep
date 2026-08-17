@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .backend_evidence import BackendEvidenceBinding
 from .bids import bids_relative_path
 from .execution_models import (
     ArtifactRequirement,
@@ -279,7 +280,9 @@ def compile_execution_plan(
     run_policy: dict[str, Any] | None = None,
     policy_digest: str | None = None,
     backend_decisions: list[dict[str, Any]] | None = None,
+    backend_qualification_tests: list[dict[str, Any]] | None = None,
     planned_smoke_tests: list[dict[str, Any]] | None = None,
+    backend_evidence: BackendEvidenceBinding | None = None,
 ) -> ExecutionPlan:
     if graph.dataset.dataset_id != layout.dataset_id:
         raise ValueError("graph and run layout dataset ids differ")
@@ -566,7 +569,9 @@ def compile_execution_plan(
         run_policy=run_policy or {},
         policy_digest=policy_digest,
         backend_decisions=relevant_decisions,
+        backend_qualification_tests=backend_qualification_tests or [],
         planned_smoke_tests=relevant_smoke_tests,
+        backend_evidence=backend_evidence,
     )
 
 

@@ -4,6 +4,16 @@ import argparse
 import json
 import os
 
+from .backend_evidence import (
+    BackendEvidenceDocument,
+    build_backend_evidence,
+    create_signing_key,
+    current_git_commit,
+    read_signing_key,
+    revalidate_execution_evidence,
+    validate_backend_evidence,
+    write_evidence_document,
+)
 from .compiler import compile_execution_plan, save_execution_plan
 from .control import run_control_flow, validate_control_artifact
 from .execution_models import ExecutionPlan, RunLayout
@@ -102,6 +112,10 @@ def cli() -> None:
     prompt_run.add_argument("--hardware-profile")
     prompt_run.add_argument("--backend-evidence")
     prompt_run.add_argument(
+        "--backend-evidence-key",
+        default=os.getenv("NEUROPREP_BACKEND_EVIDENCE_KEY"),
+    )
+    prompt_run.add_argument(
         "--freesurfer-license",
         default=os.getenv("FS_LICENSE") or os.getenv("FREESURFER_LICENSE"),
     )
@@ -131,6 +145,28 @@ def cli() -> None:
     )
     qualification.add_argument("plan")
     qualification.add_argument("--output", required=True)
+
+    evidence_builder = subparsers.add_parser(
+        "build-backend-evidence",
+        help="Build signed, target-bound evidence from a terminal representative run",
+    )
+    evidence_builder.add_argument("--pilot-plan", required=True)
+    evidence_builder.add_argument("--pilot-state", required=True)
+    evidence_builder.add_argument("--pilot-release", required=True)
+    evidence_builder.add_argument("--target-plan", required=True)
+    evidence_builder.add_argument(
+        "--git-repository",
+        default="/nfs-stor/salma.hassan/NeuroPrep-agentic",
+    )
+    evidence_builder.add_argument("--signing-key", required=True)
+    evidence_builder.add_argument("--key-id", required=True)
+    evidence_builder.add_argument("--output", required=True)
+
+    evidence_key = subparsers.add_parser(
+        "create-backend-evidence-key",
+        help="Create a mode-0600 evidence signing key on approved cluster storage",
+    )
+    evidence_key.add_argument("--output", required=True)
 
     schema = subparsers.add_parser("schemas", help="Export core JSON Schemas")
     schema.add_argument("--output", required=True)
@@ -166,6 +202,10 @@ def cli() -> None:
     compile_run.add_argument("--policy")
     compile_run.add_argument("--hardware-profile")
     compile_run.add_argument("--backend-evidence")
+    compile_run.add_argument(
+        "--backend-evidence-key",
+        default=os.getenv("NEUROPREP_BACKEND_EVIDENCE_KEY"),
+    )
     compile_run.add_argument("--allow-quarantine", action="store_true")
     compile_run.add_argument("--allow-unsupported", action="store_true")
     compile_run.add_argument("--output", required=True)
@@ -197,6 +237,10 @@ def cli() -> None:
     assets.add_argument("--output")
     initialize = subparsers.add_parser("run-init", help="Initialize the durable run database")
     initialize.add_argument("plan")
+    initialize.add_argument(
+        "--backend-evidence-key",
+        default=os.getenv("NEUROPREP_BACKEND_EVIDENCE_KEY"),
+    )
     initialize.add_argument("--allow-incomplete-preflight", action="store_true")
 
     worker = subparsers.add_parser("worker", help="Run a leased deterministic worker")
@@ -253,6 +297,7 @@ def cli() -> None:
                 identity_key=args.identity_key,
                 hardware_profile=load_hardware_profile(args.hardware_profile),
                 backend_evidence=args.backend_evidence,
+                backend_evidence_key=args.backend_evidence_key,
                 freesurfer_license=args.freesurfer_license,
                 execute_optional=args.execute_optional,
                 allow_quarantine=args.allow_quarantine,
@@ -286,6 +331,26 @@ def cli() -> None:
         plan = _load_execution_plan(args.plan)
         evidence = compile_backend_evidence(plan, RunState(plan.layout.state_path))
         _write_or_print(evidence, args.output)
+    elif args.command == "build-backend-evidence":
+        pilot_plan = validated_cluster_path(args.pilot_plan, must_exist=True)
+        pilot_state = validated_cluster_path(args.pilot_state, must_exist=True)
+        pilot_release = validated_cluster_path(args.pilot_release, must_exist=True)
+        target_plan = validated_cluster_path(args.target_plan, must_exist=True)
+        repository = validated_cluster_path(args.git_repository, must_exist=True)
+        signing_key_path = validated_cluster_path(args.signing_key, must_exist=True)
+        output = validated_cluster_path(args.output)
+        document = build_backend_evidence(
+            pilot_plan_path=pilot_plan,
+            target_plan_path=target_plan,
+            pilot_state_path=pilot_state,
+            pilot_release_path=pilot_release,
+            git_repository=repository,
+            signing_key=read_signing_key(signing_key_path),
+            key_id=args.key_id,
+        )
+        print(write_evidence_document(document, output))
+    elif args.command == "create-backend-evidence-key":
+        print(create_signing_key(args.output))
     elif args.command == "ingest-plan":
         if not args.identity_key or len(args.identity_key) < 12:
             parser.error("ingest-plan requires --identity-key or NEUROPREP_IDENTITY_KEY")
@@ -335,16 +400,51 @@ def cli() -> None:
         )
         policy = load_policy(args.policy) if args.policy else RunPolicy()
         profile = load_hardware_profile(args.hardware_profile)
+        probe_plan = compile_execution_plan(
+            graph,
+            logical_plan,
+            layout,
+            catalog,
+            run_policy=policy.model_dump(mode="json"),
+            policy_digest=policy.digest(),
+            backend_decisions=[],
+            planned_smoke_tests=[],
+        )
+        required_executor_ids = {task.executor_id for task in probe_plan.tasks}
+        unqualified = plan_backends(
+            policy,
+            profile,
+            {},
+            required_executor_ids=required_executor_ids,
+        )
+        target_smoke_tests = [
+            item.model_dump(mode="json") for item in unqualified.smoke_tests
+        ]
         evidence: dict[str, str] = {}
+        evidence_binding = None
         if args.backend_evidence:
-            evidence_path = validated_cluster_path(args.backend_evidence, must_exist=True)
-            loaded = json.loads(evidence_path.read_text(encoding="utf-8"))
-            if not isinstance(loaded, dict) or any(
-                value not in {"passed", "failed"} for value in loaded.values()
-            ):
-                parser.error("backend evidence must map test ids to passed or failed")
-            evidence = {str(key): str(value) for key, value in loaded.items()}
-        selected = plan_backends(policy, profile, evidence)
+            signing_key = (
+                read_signing_key(args.backend_evidence_key)
+                if args.backend_evidence_key
+                else None
+            )
+            loaded_evidence = validate_backend_evidence(
+                evidence_path=args.backend_evidence,
+                signing_key=signing_key,
+                target_plan=probe_plan.model_dump(mode="json"),
+                target_smoke_tests=target_smoke_tests,
+                catalog_digest=catalog.digest(),
+                target_git_commit=current_git_commit(layout.agentic_project),
+            )
+            evidence = dict(loaded_evidence.statuses)
+            evidence_binding = loaded_evidence.binding
+        selected = plan_backends(
+            policy,
+            profile,
+            evidence,
+            required_executor_ids=required_executor_ids,
+            backend_evidence=evidence_binding,
+        )
         plan = compile_execution_plan(
             graph,
             logical_plan,
@@ -353,7 +453,9 @@ def cli() -> None:
             run_policy=policy.model_dump(mode="json"),
             policy_digest=policy.digest(),
             backend_decisions=[item.model_dump(mode="json") for item in selected.decisions],
+            backend_qualification_tests=target_smoke_tests,
             planned_smoke_tests=[item.model_dump(mode="json") for item in selected.smoke_tests],
+            backend_evidence=evidence_binding,
         )
         print(save_execution_plan(plan, args.output))
     elif args.command == "preflight-run":
@@ -385,6 +487,25 @@ def cli() -> None:
         _write_or_print(result, args.output)
     elif args.command == "run-init":
         plan = _load_execution_plan(args.plan)
+        qualification_required = bool(
+            plan.backend_qualification_tests or plan.planned_smoke_tests
+        )
+        try:
+            revalidate_execution_evidence(
+                plan=plan.model_dump(mode="json"),
+                signing_key=(
+                    read_signing_key(args.backend_evidence_key)
+                    if args.backend_evidence_key
+                    else None
+                ),
+                target_git_commit=(
+                    current_git_commit(plan.layout.agentic_project)
+                    if qualification_required
+                    else ""
+                ),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            parser.error(str(exc))
         report = preflight_execution_plan(plan, builtin_executor_catalog())
         if not report.ready and not args.allow_incomplete_preflight:
             print(report.model_dump_json(indent=2))
@@ -429,6 +550,7 @@ def cli() -> None:
             "run_policy": RunPolicy.model_json_schema(),
             "hardware_profile": HardwareProfile.model_json_schema(),
             "backend_plan": BackendPlan.model_json_schema(),
+            "backend_evidence": BackendEvidenceDocument.model_json_schema(),
             "prompt_path_binding": PromptPathBinding.model_json_schema(),
         }
         _write_or_print(payload, args.output)

@@ -31,7 +31,8 @@ if ! approved_path "$NEUROPREP_REQUEST_FILE"; then
 fi
 for variable in \
   NEUROPREP_SOURCE_ROOT NEUROPREP_OUTPUT_ROOT NEUROPREP_MANIFEST \
-  NEUROPREP_IDENTITY_KEY NEUROPREP_BACKEND_EVIDENCE NEUROPREP_FREESURFER_LICENSE; do
+  NEUROPREP_IDENTITY_KEY NEUROPREP_BACKEND_EVIDENCE \
+  NEUROPREP_BACKEND_EVIDENCE_KEY NEUROPREP_FREESURFER_LICENSE; do
   value=${!variable:-}
   if [ -n "$value" ] && [ "$variable" != "NEUROPREP_IDENTITY_KEY" ] && \
       ! approved_path "$value"; then
@@ -131,6 +132,7 @@ optional_value NEUROPREP_DATASET_ID --dataset-id
 optional_value NEUROPREP_ADAPTER_ID --adapter-id
 optional_value NEUROPREP_IDENTITY_KEY --identity-key
 optional_value NEUROPREP_BACKEND_EVIDENCE --backend-evidence
+optional_value NEUROPREP_BACKEND_EVIDENCE_KEY --backend-evidence-key
 optional_value NEUROPREP_FREESURFER_LICENSE --freesurfer-license
 optional_flag NEUROPREP_EXECUTE_OPTIONAL --execute-optional
 optional_flag NEUROPREP_ALLOW_QUARANTINE --allow-quarantine

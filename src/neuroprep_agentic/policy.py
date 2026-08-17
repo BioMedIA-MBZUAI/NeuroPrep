@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .backend_evidence import BackendEvidenceBinding
+
 
 class ProcessingObjective(StrEnum):
     STANDARD = "standard"
@@ -175,6 +177,7 @@ class BackendPlan(BaseModel):
     decisions: list[BackendDecision]
     smoke_tests: list[SmokeTestSpec]
     ready: bool
+    backend_evidence: BackendEvidenceBinding | None = None
 
 
 def detect_hardware_profile() -> HardwareProfile:
@@ -326,6 +329,7 @@ def plan_backends(
     evidence: dict[str, str] | None = None,
     *,
     required_executor_ids: set[str] | frozenset[str] | None = None,
+    backend_evidence: BackendEvidenceBinding | None = None,
 ) -> BackendPlan:
     observed = evidence or {}
     portfolio = builtin_backend_portfolio()
@@ -428,6 +432,7 @@ def plan_backends(
         decisions=decisions,
         smoke_tests=smoke_tests,
         ready=all(item.selected_executor_id is not None for item in decisions),
+        backend_evidence=backend_evidence,
     )
 
 

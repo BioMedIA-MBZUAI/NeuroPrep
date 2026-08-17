@@ -11,6 +11,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from .backend_evidence import (
+    current_git_commit,
+    read_signing_key,
+    validate_backend_evidence,
+)
 from .compiler import compile_execution_plan, save_execution_plan
 from .execution_models import RunLayout
 from .executors import builtin_executor_catalog
@@ -30,7 +35,7 @@ from .settings import ALLOWED_ROOTS, validated_cluster_path
 from .state import RunState
 
 _PATH_TOKEN = (
-    r"/(?:nfs-stor/salma\.hassan|l/users/salma\.hassan)"
+    rf"(?:{'|'.join(re.escape(str(root)) for root in ALLOWED_ROOTS)})"
     r"(?:/[^\s\"'<>]*)?"
 )
 _PATH_RE = re.compile(_PATH_TOKEN)
@@ -448,18 +453,6 @@ def _write_json(path: Path, payload: Any) -> None:
     temporary.replace(path)
 
 
-def _load_evidence(path: str | None) -> dict[str, str]:
-    if path is None:
-        return {}
-    candidate = validated_cluster_path(path, must_exist=True)
-    loaded = json.loads(candidate.read_text(encoding="utf-8"))
-    if not isinstance(loaded, dict) or any(
-        value not in {"passed", "failed"} for value in loaded.values()
-    ):
-        raise ValueError("backend evidence must map test ids to passed or failed")
-    return {str(key): str(value) for key, value in loaded.items()}
-
-
 def _validate_manifest_sources(manifest: ManifestDocument, source_root: Path) -> None:
     for record in manifest.records:
         candidate = validated_cluster_path(record.source_path, must_exist=True).resolve()
@@ -515,6 +508,7 @@ def prepare_prompt_run(
     identity_key: str | None = None,
     hardware_profile: HardwareProfile | None = None,
     backend_evidence: str | None = None,
+    backend_evidence_key: str | None = None,
     freesurfer_license: str | None = None,
     execute_optional: bool = False,
     allow_quarantine: bool = False,
@@ -542,8 +536,6 @@ def prepare_prompt_run(
     policy = compile_prompt_policy(request, profile)
     policy_path = output / "policy.json"
     _write_json(policy_path, policy)
-    evidence = _load_evidence(backend_evidence)
-
     if manifest_path:
         manifest = load_manifest(manifest_path)
         _validate_manifest_sources(manifest, source)
@@ -608,20 +600,59 @@ def prepare_prompt_run(
         planned_smoke_tests=[],
     )
     required_executor_ids = {task.executor_id for task in probe_plan.tasks}
+    unqualified_backend_plan = plan_backends(
+        policy,
+        profile,
+        {},
+        required_executor_ids=required_executor_ids,
+    )
+    target_smoke_tests = [
+        item.model_dump(mode="json") for item in unqualified_backend_plan.smoke_tests
+    ]
+    evidence: dict[str, str] = {}
+    evidence_binding = None
+    if backend_evidence:
+        signing_key = read_signing_key(backend_evidence_key) if backend_evidence_key else None
+        loaded_evidence = validate_backend_evidence(
+            evidence_path=backend_evidence,
+            signing_key=signing_key,
+            target_plan=probe_plan.model_dump(mode="json"),
+            target_smoke_tests=target_smoke_tests,
+            catalog_digest=catalog.digest(),
+            target_git_commit=current_git_commit(layout.agentic_project),
+        )
+        evidence = dict(loaded_evidence.statuses)
+        evidence_binding = loaded_evidence.binding
     backend_plan = plan_backends(
         policy,
         profile,
         evidence,
         required_executor_ids=required_executor_ids,
+        backend_evidence=evidence_binding,
     )
     backend_path = output / "backend-plan.json"
     _write_json(backend_path, backend_plan)
     if not backend_plan.ready:
         raise ValueError("no integrated hardware-compatible backend for every required capability")
-    if submit and backend_plan.smoke_tests:
+    should_initialize = initialize or submit
+    required_test_ids = {str(item["test_id"]) for item in target_smoke_tests}
+    verified_test_ids = {
+        test_id for test_id, status in evidence.items() if status == "passed"
+    }
+    evidence_is_verified = bool(
+        evidence_binding is not None and evidence_binding.trust == "verified"
+    )
+    if should_initialize and required_test_ids and (
+        not evidence_is_verified or not required_test_ids <= verified_test_ids
+    ):
+        raise ValueError(
+            "initialization requires signed, target-bound backend evidence for every "
+            "required smoke test"
+        )
+    if should_initialize and backend_plan.smoke_tests:
         raise ValueError(
             f"{len(backend_plan.smoke_tests)} required backend smoke tests still require evidence; "
-            "run the bounded qualification tasks and pass --backend-evidence before submission"
+            "run bounded qualification tasks and pass signed --backend-evidence"
         )
     plan = compile_execution_plan(
         graph,
@@ -631,7 +662,9 @@ def prepare_prompt_run(
         run_policy=policy.model_dump(mode="json"),
         policy_digest=policy.digest(),
         backend_decisions=[item.model_dump(mode="json") for item in backend_plan.decisions],
+        backend_qualification_tests=target_smoke_tests,
         planned_smoke_tests=[item.model_dump(mode="json") for item in backend_plan.smoke_tests],
+        backend_evidence=evidence_binding,
     )
     plan_path = save_execution_plan(plan, str(output / "execution-plan.json"))
     asset_report = prepare_runtime_assets(plan)
@@ -644,7 +677,6 @@ def prepare_prompt_run(
     preflight_path = output / "preflight.json"
     _write_json(preflight_path, preflight)
 
-    should_initialize = initialize or submit
     if should_initialize and not preflight.ready:
         raise ValueError("execution preflight failed; refusing to initialize or submit")
     state_summary: dict[str, Any] | None = None
@@ -669,6 +701,9 @@ def prepare_prompt_run(
         "preflight": str(preflight_path),
         "state_summary": state_summary,
         "launch": launch,
+        "backend_evidence": (
+            evidence_binding.model_dump(mode="json") if evidence_binding else None
+        ),
     }
     _write_json(output / "prompt-run.json", result)
     return result

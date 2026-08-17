@@ -6,6 +6,10 @@ from pathlib import Path
 import pytest
 
 from neuroprep_agentic import prompt_run
+from neuroprep_agentic.backend_evidence import (
+    BackendEvidenceBinding,
+    LoadedBackendEvidence,
+)
 from neuroprep_agentic.execution_models import PreflightReport
 from neuroprep_agentic.policy import HardwareProfile, RunPolicy
 from neuroprep_agentic.prompt_run import (
@@ -141,8 +145,8 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
         container_runtime="singularity",
     )
 
-    unqualified_output = nfs_tmp / "unqualified"
-    with pytest.raises(ValueError, match="smoke tests still require evidence"):
+    unqualified_output = nfs_tmp / "unqualified-submit"
+    with pytest.raises(ValueError, match="signed, target-bound backend evidence"):
         prepare_prompt_run(
             f"My data is at {source}; preprocess it and save to {unqualified_output}",
             hardware_profile=hardware,
@@ -150,9 +154,56 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
         )
     assert not (unqualified_output / "state" / "tasks.sqlite").exists()
 
+    initialize_output = nfs_tmp / "unqualified-initialize"
+    with pytest.raises(ValueError, match="signed, target-bound backend evidence"):
+        prepare_prompt_run(
+            f"My data is at {source}; preprocess it and save to {initialize_output}",
+            hardware_profile=hardware,
+            initialize=True,
+        )
+    assert not (initialize_output / "state" / "tasks.sqlite").exists()
+
+    planning_output = nfs_tmp / "planning-only"
+    planning = prepare_prompt_run(
+        f"My data is at {source}; preprocess it and save to {planning_output}",
+        hardware_profile=hardware,
+    )
+    assert planning["state_summary"] is None
+    planning_plan = json.loads(
+        Path(planning["execution_plan"]).read_text(encoding="utf-8")
+    )
+    required_test_ids = sorted(
+        item["test_id"] for item in planning_plan["planned_smoke_tests"]
+    )
+    assert required_test_ids
+
+    def verified_evidence(**kwargs):
+        observed = sorted(item["test_id"] for item in kwargs["target_smoke_tests"])
+        assert observed == required_test_ids
+        return LoadedBackendEvidence(
+            statuses={test_id: "passed" for test_id in observed},
+            binding=BackendEvidenceBinding(
+                trust="verified",
+                source_path=str(nfs_tmp / "signed-evidence.json"),
+                document_sha256="2" * 64,
+                catalog_digest="3" * 64,
+                target_git_commit="4" * 40,
+                key_id="test-key",
+                pilot_plan_sha256="5" * 64,
+                target_protocol_sha256="6" * 64,
+                required_test_ids=observed,
+                matched_test_ids=observed,
+            ),
+        )
+
+    monkeypatch.setattr(prompt_run, "read_signing_key", lambda _path: b"x" * 32)
+    monkeypatch.setattr(prompt_run, "current_git_commit", lambda _path: "4" * 40)
+    monkeypatch.setattr(prompt_run, "validate_backend_evidence", verified_evidence)
     result = prepare_prompt_run(
         f"My data is at {source}; preprocess it and save to {output}",
         hardware_profile=hardware,
+        backend_evidence=str(nfs_tmp / "signed-evidence.json"),
+        backend_evidence_key=str(nfs_tmp / "signing.key"),
         initialize=True,
     )
 
@@ -167,6 +218,10 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     assert result["state_summary"]["total"] == result["task_count"]
     assert result["state_summary"]["counts"]["pending"] > 0
     backend_plan = json.loads((output / "backend-plan.json").read_text(encoding="utf-8"))
+    assert backend_plan["backend_evidence"]["trust"] == "verified"
+    assert backend_plan["smoke_tests"] == []
+    execution_plan = json.loads(Path(result["execution_plan"]).read_text(encoding="utf-8"))
+    assert execution_plan["backend_evidence"]["document_sha256"] == "2" * 64
     assert {item["capability"] for item in backend_plan["decisions"]} == {
         "structural_preprocess",
         "structural_segment",
