@@ -20,15 +20,15 @@ document. It contains:
 - source-format and modality/protocol signatures for the pilot and target;
 - the complete signed target smoke-test set and per-test pass status for the
   pilot/target executor intersection;
-- the current clean target repository commit; and
+- the resolved exact target repository path and its current clean commit; and
 - pilot git provenance only when a commit is embedded in the hashed pilot plan,
   state metadata, or release summary. If those immutable artifacts contain no
   commit, the document records `verification: unknown`, `commit: null`, and
   makes no pilot-commit claim.
 
-The validator recomputes the signature, catalog digest, target git commit,
-target protocol, complete smoke-test set, normalized executor commands and
-resources, image paths/hashes, and evidence digest. The compact verified
+The validator recomputes the signature, catalog digest, resolved target git
+root, target git commit, target protocol, complete smoke-test set, normalized
+executor commands and resources, image paths/hashes, and evidence digest. The compact verified
 binding is serialized into both `backend-plan.json` and
 `execution-plan.json`. The execution plan also retains the complete original
 qualification set even after all tests pass.
@@ -60,7 +60,8 @@ First compile a planning-only target in a disposable probe root. Do not use
 neuroprep-agentic prompt-run \
   --request 'My data is at /nfs-stor/salma.hassan/NeuroPrep-production/20260817/sources/anmerge; preprocess it and save to /nfs-stor/salma.hassan/NeuroPrep-production/20260817/runs/anmerge-full-v2-probe' \
   --manifest /nfs-stor/salma.hassan/NeuroPrep-production/manifests/anmerge-full-v2.json \
-  --dataset-id anmerge-full-v2
+  --dataset-id anmerge-full-v2 \
+  --agentic-project /nfs-stor/salma.hassan/NeuroPrep-agentic-production-COMMIT
 ```
 
 Build the signed intersection from a terminal representative pilot:
@@ -71,7 +72,7 @@ neuroprep-agentic build-backend-evidence \
   --pilot-state /nfs-stor/salma.hassan/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/state/tasks.sqlite \
   --pilot-release /nfs-stor/salma.hassan/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/derivatives/release/release-summary.json \
   --target-plan /nfs-stor/salma.hassan/NeuroPrep-production/20260817/runs/anmerge-full-v2-probe/execution-plan.json \
-  --git-repository /nfs-stor/salma.hassan/NeuroPrep-agentic \
+  --git-repository /nfs-stor/salma.hassan/NeuroPrep-agentic-production-COMMIT \
   --signing-key /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key \
   --key-id campaign-20260817 \
   --output /nfs-stor/salma.hassan/NeuroPrep-production/20260817/evidence/anmerge-full-v2.json
@@ -85,6 +86,7 @@ neuroprep-agentic prompt-run \
   --request 'My data is at /nfs-stor/salma.hassan/NeuroPrep-production/20260817/sources/anmerge; preprocess it and save to /nfs-stor/salma.hassan/NeuroPrep-production/20260817/runs/anmerge-full-v2' \
   --manifest /nfs-stor/salma.hassan/NeuroPrep-production/manifests/anmerge-full-v2.json \
   --dataset-id anmerge-full-v2 \
+  --agentic-project /nfs-stor/salma.hassan/NeuroPrep-agentic-production-COMMIT \
   --backend-evidence /nfs-stor/salma.hassan/NeuroPrep-production/20260817/evidence/anmerge-full-v2.json \
   --backend-evidence-key /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key \
   --initialize
@@ -99,4 +101,8 @@ neuroprep-agentic run-init /nfs-stor/salma.hassan/run/execution-plan.json \
 ```
 
 No evidence is required when the deterministic backend planner produces zero
-target smoke tests.
+target smoke tests. `--agentic-project` takes precedence over
+`NEUROPREP_AGENTIC_PROJECT`, which in turn takes precedence over the historical
+`/nfs-stor/salma.hassan/NeuroPrep-agentic` default. The selected path must
+resolve to the exact top level of an existing git repository. Evidence built
+for one path or commit cannot initialize a plan using another.

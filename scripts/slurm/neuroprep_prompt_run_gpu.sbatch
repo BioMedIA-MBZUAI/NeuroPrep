@@ -6,13 +6,14 @@
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
 #SBATCH --exclude=gpu-03,gpu-05,gpu-50
-#SBATCH --chdir=/nfs-stor/salma.hassan/NeuroPrep-agentic
-#SBATCH --output=/nfs-stor/salma.hassan/NeuroPrep-agentic/logs/%x-%j.out
-#SBATCH --error=/nfs-stor/salma.hassan/NeuroPrep-agentic/logs/%x-%j.err
+#SBATCH --chdir=/nfs-stor/salma.hassan
+#SBATCH --output=/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/%x-%j.out
+#SBATCH --error=/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/%x-%j.err
 
 set -euo pipefail
 
-APP_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/apps/local/anaconda3/bin
+APP_ROOT=${NEUROPREP_AGENTIC_PROJECT:-/nfs-stor/salma.hassan/NeuroPrep-agentic}
 CACHE_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic-cache
 RUNTIME_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/prompt-run-$SLURM_JOB_ID
 OLLAMA_IMAGE=$CACHE_ROOT/containers/ollama-0.32.6.sif
@@ -30,6 +31,7 @@ if ! approved_path "$NEUROPREP_REQUEST_FILE"; then
   exit 2
 fi
 for variable in \
+  NEUROPREP_AGENTIC_PROJECT \
   NEUROPREP_SOURCE_ROOT NEUROPREP_OUTPUT_ROOT NEUROPREP_MANIFEST \
   NEUROPREP_IDENTITY_KEY NEUROPREP_BACKEND_EVIDENCE \
   NEUROPREP_BACKEND_EVIDENCE_KEY NEUROPREP_FREESURFER_LICENSE; do
@@ -41,7 +43,19 @@ for variable in \
   fi
 done
 
-export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/apps/local/anaconda3/bin
+APP_ROOT=$(readlink -f "$APP_ROOT")
+if ! approved_path "$APP_ROOT" || [ ! -d "$APP_ROOT" ]; then
+  echo "NEUROPREP_AGENTIC_PROJECT must resolve to an approved directory" >&2
+  exit 2
+fi
+REPOSITORY_ROOT=$(git -C "$APP_ROOT" rev-parse --show-toplevel 2>/dev/null || true)
+if [ -z "$REPOSITORY_ROOT" ] || [ "$(readlink -f "$REPOSITORY_ROOT")" != "$APP_ROOT" ]; then
+  echo "NEUROPREP_AGENTIC_PROJECT must be the exact git repository root" >&2
+  exit 2
+fi
+export NEUROPREP_AGENTIC_PROJECT=$APP_ROOT
+cd "$APP_ROOT"
+
 export TMPDIR=$RUNTIME_ROOT/tmp
 export TMP=$TMPDIR
 export TEMP=$TMPDIR
@@ -127,6 +141,7 @@ optional_flag() {
 }
 optional_value NEUROPREP_SOURCE_ROOT --source-root
 optional_value NEUROPREP_OUTPUT_ROOT --output-root
+optional_value NEUROPREP_AGENTIC_PROJECT --agentic-project
 optional_value NEUROPREP_MANIFEST --manifest
 optional_value NEUROPREP_DATASET_ID --dataset-id
 optional_value NEUROPREP_ADAPTER_ID --adapter-id

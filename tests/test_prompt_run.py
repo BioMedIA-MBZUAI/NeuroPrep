@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,12 @@ from neuroprep_agentic.prompt_run import (
     prepare_prompt_run,
     resolve_prompt_paths,
 )
+
+
+def _git_repository(path: Path) -> Path:
+    path.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    return path.resolve()
 
 
 def test_prompt_paths_bind_natural_language_x_and_y(nfs_tmp: Path) -> None:
@@ -110,6 +117,39 @@ def test_inventory_groups_dicom_files_as_one_acquisition(nfs_tmp: Path) -> None:
     assert manifest.records[0].source_session_id == "V1"
 
 
+def test_submit_uses_selected_agentic_project_launcher_and_environment(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
+) -> None:
+    project = nfs_tmp / "selected-project"
+    plan = nfs_tmp / "execution-plan.json"
+    observed: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        observed["command"] = command
+        observed["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                "launch_complete=true\nreview_job=1\nworker_jobs=2\n"
+                "finalize_job=3\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(prompt_run.subprocess, "run", fake_run)
+
+    result = prompt_run._submit_workers(plan, 3, str(project))
+
+    assert observed["command"] == [
+        str(project / "scripts/launch_neuroprep_run.sh"),
+        str(plan),
+        "3",
+    ]
+    assert observed["environment"]["NEUROPREP_AGENTIC_PROJECT"] == str(project)
+    assert result["launch_complete"] == "true"
+
+
 def test_prepare_prompt_run_compiles_a_complete_handoff(
     monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
 ) -> None:
@@ -122,6 +162,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
         json.dumps({"Modality": "MR", "SeriesDescription": "MPRAGE"}),
         encoding="utf-8",
     )
+    agentic_project = _git_repository(nfs_tmp / "NeuroPrep-agentic-review")
     monkeypatch.setattr(
         prompt_run,
         "compile_prompt_policy",
@@ -150,6 +191,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
         prepare_prompt_run(
             f"My data is at {source}; preprocess it and save to {unqualified_output}",
             hardware_profile=hardware,
+            agentic_project=str(agentic_project),
             submit=True,
         )
     assert not (unqualified_output / "state" / "tasks.sqlite").exists()
@@ -159,6 +201,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
         prepare_prompt_run(
             f"My data is at {source}; preprocess it and save to {initialize_output}",
             hardware_profile=hardware,
+            agentic_project=str(agentic_project),
             initialize=True,
         )
     assert not (initialize_output / "state" / "tasks.sqlite").exists()
@@ -167,6 +210,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     planning = prepare_prompt_run(
         f"My data is at {source}; preprocess it and save to {planning_output}",
         hardware_profile=hardware,
+        agentic_project=str(agentic_project),
     )
     assert planning["state_summary"] is None
     planning_plan = json.loads(
@@ -188,6 +232,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
                 document_sha256="2" * 64,
                 catalog_digest="3" * 64,
                 target_git_commit="4" * 40,
+                target_agentic_project=str(agentic_project),
                 key_id="test-key",
                 pilot_plan_sha256="5" * 64,
                 target_protocol_sha256="6" * 64,
@@ -202,6 +247,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     result = prepare_prompt_run(
         f"My data is at {source}; preprocess it and save to {output}",
         hardware_profile=hardware,
+        agentic_project=str(agentic_project),
         backend_evidence=str(nfs_tmp / "signed-evidence.json"),
         backend_evidence_key=str(nfs_tmp / "signing.key"),
         initialize=True,
@@ -219,8 +265,12 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     assert result["state_summary"]["counts"]["pending"] > 0
     backend_plan = json.loads((output / "backend-plan.json").read_text(encoding="utf-8"))
     assert backend_plan["backend_evidence"]["trust"] == "verified"
+    assert backend_plan["backend_evidence"]["target_agentic_project"] == str(
+        agentic_project
+    )
     assert backend_plan["smoke_tests"] == []
     execution_plan = json.loads(Path(result["execution_plan"]).read_text(encoding="utf-8"))
+    assert execution_plan["layout"]["agentic_project"] == str(agentic_project)
     assert execution_plan["backend_evidence"]["document_sha256"] == "2" * 64
     assert {item["capability"] for item in backend_plan["decisions"]} == {
         "structural_preprocess",

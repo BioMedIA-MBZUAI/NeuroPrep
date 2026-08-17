@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-APP_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/apps/local/anaconda3/bin
+APP_ROOT=${NEUROPREP_AGENTIC_PROJECT:-/nfs-stor/salma.hassan/NeuroPrep-agentic}
 REVIEW_JOB=""
 WORKER_JOBS=""
 FINALIZE_JOB=""
@@ -33,12 +34,26 @@ case "$PLAN" in
   /nfs-stor/salma.hassan/*|/l/users/salma.hassan/*) ;;
   *) echo "Plan must be on approved cluster storage" >&2; exit 2 ;;
 esac
+case "$APP_ROOT" in
+  /nfs-stor/salma.hassan/*|/l/users/salma.hassan/*) ;;
+  *) echo "NEUROPREP_AGENTIC_PROJECT must be on approved cluster storage" >&2; exit 2 ;;
+esac
+APP_ROOT=$(readlink -f "$APP_ROOT")
+case "$APP_ROOT" in
+  /nfs-stor/salma.hassan/*|/l/users/salma.hassan/*) ;;
+  *) echo "Resolved NEUROPREP_AGENTIC_PROJECT must be on approved cluster storage" >&2; exit 2 ;;
+esac
+REPOSITORY_ROOT=$(git -C "$APP_ROOT" rev-parse --show-toplevel 2>/dev/null || true)
+if [ -z "$REPOSITORY_ROOT" ] || [ "$(readlink -f "$REPOSITORY_ROOT")" != "$APP_ROOT" ]; then
+  echo "NEUROPREP_AGENTIC_PROJECT must be the exact git repository root" >&2
+  exit 2
+fi
+export NEUROPREP_AGENTIC_PROJECT=$APP_ROOT
 if ! [[ "$GPU_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
   echo "GPU_WORKERS must be a positive integer" >&2
   exit 2
 fi
 
-export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/apps/local/anaconda3/bin
 LAUNCHER_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/launcher
 export TMPDIR=$LAUNCHER_ROOT/tmp
 export TMP=$TMPDIR
@@ -53,6 +68,16 @@ mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" \
 test -s "$PLAN"
 test -x /usr/bin/singularity
 test -x "$APP_ROOT/.venv/bin/neuroprep-agentic"
+
+PLAN_AGENTIC_PROJECT=$(
+  "$APP_ROOT/.venv/bin/python" -c \
+    'import json,os,sys; print(os.path.realpath(json.load(open(sys.argv[1]))["layout"]["agentic_project"]))' \
+    "$PLAN"
+)
+if [ "$PLAN_AGENTIC_PROJECT" != "$APP_ROOT" ]; then
+  echo "Execution plan agentic project differs from launcher repository" >&2
+  exit 2
+fi
 
 STATE=$(
   "$APP_ROOT/.venv/bin/python" -c \

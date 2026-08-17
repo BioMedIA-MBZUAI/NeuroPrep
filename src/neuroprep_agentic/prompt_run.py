@@ -31,7 +31,7 @@ from .preflight import preflight_execution_plan
 from .registry import builtin_registry
 from .runtime_assets import prepare_runtime_assets
 from .services import ManifestDocument, build_graph_and_plan, load_manifest
-from .settings import ALLOWED_ROOTS, validated_cluster_path
+from .settings import ALLOWED_ROOTS, validated_agentic_project, validated_cluster_path
 from .state import RunState
 
 _PATH_TOKEN = (
@@ -474,14 +474,19 @@ def _identity_key(output_root: Path, supplied: str | None) -> tuple[str, str]:
     return key, "generated"
 
 
-def _submit_workers(plan_path: Path, gpu_workers: int) -> dict[str, str]:
-    launcher = Path("/nfs-stor/salma.hassan/NeuroPrep-agentic/scripts/launch_neuroprep_run.sh")
+def _submit_workers(
+    plan_path: Path, gpu_workers: int, agentic_project: str
+) -> dict[str, str]:
+    launcher = Path(agentic_project) / "scripts/launch_neuroprep_run.sh"
+    environment = os.environ.copy()
+    environment["NEUROPREP_AGENTIC_PROJECT"] = agentic_project
     completed = subprocess.run(
         [str(launcher), str(plan_path), str(gpu_workers)],
         check=False,
         capture_output=True,
         text=True,
         timeout=120,
+        env=environment,
     )
     if completed.returncode != 0:
         raise RuntimeError(
@@ -506,6 +511,7 @@ def prepare_prompt_run(
     dataset_id: str | None = None,
     adapter_id: str | None = None,
     identity_key: str | None = None,
+    agentic_project: str | None = None,
     hardware_profile: HardwareProfile | None = None,
     backend_evidence: str | None = None,
     backend_evidence_key: str | None = None,
@@ -521,6 +527,7 @@ def prepare_prompt_run(
         raise ValueError("prompt request cannot be empty")
     if gpu_workers < 1 or gpu_workers > 32:
         raise ValueError("gpu_workers must be between 1 and 32")
+    resolved_agentic_project = validated_agentic_project(agentic_project)
     binding = resolve_prompt_paths(request, source_root=source_root, output_root=output_root)
     source = Path(binding.source_root)
     output = Path(binding.output_root)
@@ -586,6 +593,7 @@ def prepare_prompt_run(
         derivatives_root=str(output / "derivatives"),
         work_root=str(output / "work"),
         state_path=str(output / "state" / "tasks.sqlite"),
+        agentic_project=str(resolved_agentic_project),
         freesurfer_license=freesurfer_license,
         execute_optional=execute_optional,
     )
@@ -684,7 +692,11 @@ def prepare_prompt_run(
         state = RunState(plan.layout.state_path)
         state.initialize(plan, str(plan_path))
         state_summary = state.summary()
-    launch = _submit_workers(plan_path, gpu_workers) if submit else None
+    launch = (
+        _submit_workers(plan_path, gpu_workers, plan.layout.agentic_project)
+        if submit
+        else None
+    )
     result = {
         "ready": preflight.ready,
         "submitted": submit,

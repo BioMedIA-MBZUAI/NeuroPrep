@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 from copy import deepcopy
 from pathlib import Path
 
@@ -88,7 +89,14 @@ def _task(root: Path, dataset: str, subject: str, image: Path) -> dict[str, obje
     }
 
 
-def _plan(root: Path, dataset: str, subject: str, image: Path, smoke: bool) -> dict[str, object]:
+def _plan(
+    root: Path,
+    dataset: str,
+    subject: str,
+    image: Path,
+    smoke: bool,
+    agentic_project: Path,
+) -> dict[str, object]:
     return {
         "schema_version": "1.0",
         "dataset_id": dataset,
@@ -101,6 +109,7 @@ def _plan(root: Path, dataset: str, subject: str, image: Path, smoke: bool) -> d
             "derivatives_root": str(root / "derivatives"),
             "work_root": str(root / "work"),
             "state_path": str(root / "state" / "tasks.sqlite"),
+            "agentic_project": str(agentic_project),
         },
         "tasks": [_task(root, dataset, subject, image)],
         "required_executor_ids": ["smriprep"],
@@ -134,8 +143,26 @@ def _fixture(nfs_tmp: Path) -> dict[str, object]:
     image.write_bytes(b"immutable-smriprep-image")
     pilot_root = nfs_tmp / "openneuro-case01"
     target_root = nfs_tmp / "anmerge-full-v2-probe"
-    pilot = _plan(pilot_root, "openneuro-case01", "pilot", image, smoke=False)
-    target = _plan(target_root, "anmerge-full-v2", "target", image, smoke=True)
+    repository = nfs_tmp / "NeuroPrep-agentic-target"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    repository = repository.resolve()
+    pilot = _plan(
+        pilot_root,
+        "openneuro-case01",
+        "pilot",
+        image,
+        smoke=False,
+        agentic_project=repository,
+    )
+    target = _plan(
+        target_root,
+        "anmerge-full-v2",
+        "target",
+        image,
+        smoke=True,
+        agentic_project=repository,
+    )
     pilot_plan = pilot_root / "execution-plan.json"
     target_plan = target_root / "execution-plan.json"
     _json(pilot_plan, pilot)
@@ -236,7 +263,7 @@ def _fixture(nfs_tmp: Path) -> dict[str, object]:
         "target_plan": target_plan,
         "state": state,
         "release": release,
-        "repository": nfs_tmp,
+        "repository": repository,
     }
 
 
@@ -265,6 +292,7 @@ def test_openneuro_current_pilot_builds_deterministic_anmerge_evidence(
     assert first == second
     assert first.catalog_digest == CATALOG
     assert first.target_git_commit == COMMIT
+    assert first.target.agentic_project == str(fixture["repository"])
     assert first.pilot.git.verification == "unknown"
     assert first.pilot.git.commit is None
     assert first.target.dataset_id == "anmerge-full-v2"
@@ -290,6 +318,7 @@ def test_openneuro_current_pilot_builds_deterministic_anmerge_evidence(
 
     assert loaded.statuses == {"smoke--structural_preprocess--smriprep": "passed"}
     assert loaded.binding.trust == "verified"
+    assert loaded.binding.target_agentic_project == str(fixture["repository"])
     assert evidence_allows_execution(
         fixture["target"]["planned_smoke_tests"], loaded.binding
     )
@@ -464,6 +493,45 @@ def test_validator_rejects_target_git_commit_mismatch(
             target_smoke_tests=fixture["target"]["planned_smoke_tests"],
             catalog_digest=CATALOG,
             target_git_commit="f" * 40,
+        )
+
+
+def test_builder_rejects_target_agentic_project_repository_mismatch(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
+) -> None:
+    fixture = _fixture(nfs_tmp)
+    different_repository = nfs_tmp / "different-builder-project"
+    different_repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(different_repository)], check=True)
+    target = deepcopy(fixture["target"])
+    target["layout"]["agentic_project"] = str(different_repository.resolve())
+    _json(fixture["target_plan"], target)
+
+    with pytest.raises(EvidenceValidationError, match="differs from the evidence git repository"):
+        _build(monkeypatch, fixture)
+
+
+def test_validator_rejects_target_agentic_project_path_mismatch(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
+) -> None:
+    fixture = _fixture(nfs_tmp)
+    document = _build(monkeypatch, fixture)
+    evidence_path = nfs_tmp / "evidence.json"
+    write_evidence_document(document, evidence_path)
+    different_repository = nfs_tmp / "different-validator-project"
+    different_repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(different_repository)], check=True)
+    target = deepcopy(fixture["target"])
+    target["layout"]["agentic_project"] = str(different_repository.resolve())
+
+    with pytest.raises(EvidenceValidationError, match="target agentic project mismatch"):
+        validate_backend_evidence(
+            evidence_path=evidence_path,
+            signing_key=KEY,
+            target_plan=target,
+            target_smoke_tests=target["planned_smoke_tests"],
+            catalog_digest=CATALOG,
+            target_git_commit=COMMIT,
         )
 
 

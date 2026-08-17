@@ -40,7 +40,7 @@ from .release import finalize_execution_run
 from .runtime import run_worker
 from .runtime_assets import prepare_runtime_assets, runtime_asset_inventory
 from .services import build_graph_and_plan, build_ingest_plan, load_manifest
-from .settings import validated_cluster_path
+from .settings import validated_agentic_project, validated_cluster_path
 from .state import RunState
 
 
@@ -60,7 +60,7 @@ def _write_or_print(payload: object, output: str | None) -> None:
     print(destination)
 
 
-def cli() -> None:
+def cli(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Dataset-agnostic multimodal NeuroPrep control plane"
     )
@@ -109,6 +109,13 @@ def cli() -> None:
     prompt_run.add_argument("--dataset-id")
     prompt_run.add_argument("--adapter-id")
     prompt_run.add_argument("--identity-key", default=os.getenv("NEUROPREP_IDENTITY_KEY"))
+    prompt_run.add_argument(
+        "--agentic-project",
+        help=(
+            "Exact NeuroPrep-agentic git root; CLI overrides "
+            "NEUROPREP_AGENTIC_PROJECT and the production default"
+        ),
+    )
     prompt_run.add_argument("--hardware-profile")
     prompt_run.add_argument("--backend-evidence")
     prompt_run.add_argument(
@@ -197,6 +204,13 @@ def cli() -> None:
     compile_run.add_argument("--derivatives-root", required=True)
     compile_run.add_argument("--work-root", required=True)
     compile_run.add_argument("--state-path", required=True)
+    compile_run.add_argument(
+        "--agentic-project",
+        help=(
+            "Exact NeuroPrep-agentic git root; CLI overrides "
+            "NEUROPREP_AGENTIC_PROJECT and the production default"
+        ),
+    )
     compile_run.add_argument("--freesurfer-license")
     compile_run.add_argument("--execute-optional", action="store_true")
     compile_run.add_argument("--policy")
@@ -266,7 +280,7 @@ def cli() -> None:
     finalize.add_argument("plan")
     finalize.add_argument("--output-root", required=True)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.command == "coverage":
         _write_or_print(builtin_registry().inventory(), args.output)
     elif args.command == "hardware-profile":
@@ -295,6 +309,7 @@ def cli() -> None:
                 dataset_id=args.dataset_id,
                 adapter_id=args.adapter_id,
                 identity_key=args.identity_key,
+                agentic_project=args.agentic_project,
                 hardware_profile=load_hardware_profile(args.hardware_profile),
                 backend_evidence=args.backend_evidence,
                 backend_evidence_key=args.backend_evidence_key,
@@ -388,6 +403,10 @@ def cli() -> None:
         missing = catalog.audit(registry)
         if missing:
             parser.error("executor catalog gaps: " + ", ".join(missing))
+        try:
+            agentic_project = validated_agentic_project(args.agentic_project)
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            parser.error(str(exc))
         layout = RunLayout(
             dataset_id=manifest.dataset.dataset_id,
             source_root=args.source_root,
@@ -395,6 +414,7 @@ def cli() -> None:
             derivatives_root=args.derivatives_root,
             work_root=args.work_root,
             state_path=args.state_path,
+            agentic_project=str(agentic_project),
             freesurfer_license=args.freesurfer_license,
             execute_optional=args.execute_optional,
         )

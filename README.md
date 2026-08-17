@@ -104,6 +104,7 @@ neuroprep-agentic hardware-profile \
 # submission requires signed evidence when the backend plan has smoke tests.
 neuroprep-agentic prompt-run \
   --request 'My data is at /nfs-stor/salma.hassan/source; preprocess all modalities and longitudinal visits and save to /nfs-stor/salma.hassan/run' \
+  --agentic-project /nfs-stor/salma.hassan/NeuroPrep-agentic \
   --freesurfer-license /nfs-stor/salma.hassan/licenses/freesurfer.txt
 
 # Add --submit to launch central review, workers, and the final release gate.
@@ -140,6 +141,7 @@ neuroprep-agentic compile-run MANIFEST.json \
   --derivatives-root /nfs-stor/salma.hassan/run/derivatives \
   --work-root /nfs-stor/salma.hassan/run/work \
   --state-path /nfs-stor/salma.hassan/run/state/tasks.sqlite \
+  --agentic-project /nfs-stor/salma.hassan/NeuroPrep-agentic \
   --freesurfer-license /nfs-stor/salma.hassan/licenses/freesurfer.txt \
   --policy /nfs-stor/salma.hassan/run/policy.json \
   --hardware-profile /nfs-stor/salma.hassan/run/hardware.json \
@@ -169,9 +171,11 @@ NEUROPREP_POLICY_OUTPUT=/nfs-stor/salma.hassan/run/policy.json \
   scripts/slurm/neuroprep_prompt_policy_gpu.sbatch
 
 # Run the complete prompt compiler on a scheduled GPU. Set
-# NEUROPREP_SUBMIT=true only when the compiled run should be launched.
+# NEUROPREP_SUBMIT=true only when the compiled run should be launched. Set
+# NEUROPREP_AGENTIC_PROJECT when executing an immutable production clone.
 sbatch --export=ALL,\
 NEUROPREP_REQUEST_FILE=/nfs-stor/salma.hassan/run/request.txt,\
+NEUROPREP_AGENTIC_PROJECT=/nfs-stor/salma.hassan/NeuroPrep-agentic,\
 NEUROPREP_FREESURFER_LICENSE=/nfs-stor/salma.hassan/licenses/freesurfer.txt,\
 NEUROPREP_SUBMIT=false \
   scripts/slurm/neuroprep_prompt_run_gpu.sbatch

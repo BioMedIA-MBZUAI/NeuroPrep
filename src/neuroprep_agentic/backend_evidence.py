@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .settings import validated_cluster_path
+from .settings import validated_agentic_project, validated_cluster_path
 
 
 class EvidenceValidationError(ValueError):
@@ -127,10 +127,16 @@ class TargetBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dataset_id: str
+    agentic_project: str
     qualification_plan: FileIdentity
     protocol: ProtocolSignature
     smoke_test_ids: list[str] = Field(min_length=1)
     smoke_tests: list[SmokeTestIdentity] = Field(min_length=1)
+
+    @field_validator("agentic_project")
+    @classmethod
+    def valid_agentic_project_path(cls, value: str) -> str:
+        return str(validated_cluster_path(value))
 
     @model_validator(mode="after")
     def consistent_smoke_tests(self) -> TargetBinding:
@@ -244,6 +250,7 @@ class BackendEvidenceBinding(BaseModel):
     catalog_digest: str | None = None
     pilot_git_commit: str | None = None
     target_git_commit: str | None = None
+    target_agentic_project: str | None = None
     key_id: str | None = None
     pilot_plan_sha256: str | None = None
     target_protocol_sha256: str | None = None
@@ -264,6 +271,11 @@ class BackendEvidenceBinding(BaseModel):
     @classmethod
     def valid_binding_commit(cls, value: str | None) -> str | None:
         return _validated_git_commit(value, "backend evidence git commit") if value else value
+
+    @field_validator("target_agentic_project")
+    @classmethod
+    def valid_binding_project(cls, value: str | None) -> str | None:
+        return str(validated_cluster_path(value)) if value else value
 
 
 class LoadedBackendEvidence(BaseModel):
@@ -348,23 +360,29 @@ def create_signing_key(path: str | Path) -> Path:
 
 
 def current_git_commit(repository: str | Path) -> str:
-    repository = Path(repository).resolve(strict=True)
-    status = subprocess.run(
-        ["git", "-C", str(repository), "status", "--porcelain", "--untracked-files=all"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    repository = validated_agentic_project(str(repository))
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(repository), "status", "--porcelain", "--untracked-files=all"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise EvidenceValidationError("could not inspect target git worktree") from exc
     if status.stdout.strip():
         raise EvidenceValidationError("backend evidence requires a clean git worktree")
-    completed = subprocess.run(
-        ["git", "-C", str(repository), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise EvidenceValidationError("could not resolve target git commit") from exc
     commit = completed.stdout.strip().lower()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise EvidenceValidationError("could not resolve a full git commit")
@@ -793,7 +811,19 @@ def build_backend_evidence(
     catalog_digest = str(pilot_plan.get("catalog_digest") or "")
     if not re.fullmatch(r"[0-9a-f]{64}", catalog_digest):
         raise EvidenceValidationError("invalid catalog digest")
-    target_git_commit = current_git_commit(git_repository)
+    repository = validated_agentic_project(str(git_repository))
+    target_layout = target_plan.get("layout")
+    if not isinstance(target_layout, dict):
+        raise EvidenceValidationError("target plan layout is missing")
+    target_project_value = target_layout.get("agentic_project")
+    if not isinstance(target_project_value, str) or not target_project_value:
+        raise EvidenceValidationError("target plan agentic project is missing")
+    target_agentic_project = validated_agentic_project(target_project_value)
+    if target_agentic_project != repository:
+        raise EvidenceValidationError(
+            "target plan agentic project differs from the evidence git repository"
+        )
+    target_git_commit = current_git_commit(target_agentic_project)
     records, task_counts, state_metadata = _read_terminal_state(
         pilot_state_path, pilot_plan, pilot_plan_path
     )
@@ -877,6 +907,7 @@ def build_backend_evidence(
         "pilot": pilot.model_dump(mode="json"),
         "target": TargetBinding(
             dataset_id=str(target_plan["dataset_id"]),
+            agentic_project=str(target_agentic_project),
             qualification_plan=_file_identity(target_plan_path),
             protocol=target_protocol,
             smoke_test_ids=[item.test_id for item in target_test_specs],
@@ -931,6 +962,15 @@ def validate_backend_evidence(
         raise EvidenceValidationError("backend evidence catalog digest mismatch")
     if document.target_git_commit != target_git_commit:
         raise EvidenceValidationError("backend evidence target git commit mismatch")
+    target_layout = target_plan.get("layout")
+    if not isinstance(target_layout, dict):
+        raise EvidenceValidationError("target plan layout is missing")
+    target_project_value = target_layout.get("agentic_project")
+    if not isinstance(target_project_value, str) or not target_project_value:
+        raise EvidenceValidationError("target plan agentic project is missing")
+    target_agentic_project = validated_agentic_project(target_project_value)
+    if document.target.agentic_project != str(target_agentic_project):
+        raise EvidenceValidationError("backend evidence target agentic project mismatch")
     target_protocol = protocol_signature(target_plan)
     if document.target.dataset_id != target_plan.get("dataset_id"):
         raise EvidenceValidationError("backend evidence target dataset mismatch")
@@ -977,6 +1017,7 @@ def validate_backend_evidence(
         catalog_digest=document.catalog_digest,
         pilot_git_commit=document.pilot.git.commit,
         target_git_commit=document.target_git_commit,
+        target_agentic_project=document.target.agentic_project,
         key_id=document.signature.key_id,
         pilot_plan_sha256=document.pilot.plan.sha256,
         target_protocol_sha256=document.target.protocol.signature_sha256,
