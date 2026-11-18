@@ -93,7 +93,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "{context_path}",
             ),
             image="{container_root}/bids-validator-3.0.1.sif",
-            image_source="docker://bids/validator:v3.0.1",
+            image_source="docker://bids/validator:3.0.1",
             artifacts=(
                 artifact(
                     "bids_validation",
