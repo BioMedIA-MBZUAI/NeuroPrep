@@ -233,6 +233,7 @@ def run_autopilot(
         probe = prepare_prompt_run(
             request,
             output_root=str(probe_root),
+            bound_roots=True,
             hardware_profile=profile,
             policy=policy,
             **common,
@@ -276,6 +277,7 @@ def run_autopilot(
             pilot = prepare_prompt_run(
                 request,
                 output_root=str(pilot_root),
+                bound_roots=True,
                 manifest_path=str(subset_path),
                 hardware_profile=profile,
                 policy=policy,

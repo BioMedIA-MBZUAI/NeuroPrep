@@ -17,6 +17,7 @@ from neuroprep_agentic.autopilot import (
     select_pilot_subjects,
 )
 from neuroprep_agentic.policy import RunPolicy
+from neuroprep_agentic.prompt_run import resolve_prompt_paths
 from neuroprep_agentic.services import ManifestDocument
 
 
@@ -109,6 +110,11 @@ class _Harness:
             return RunPolicy(source="prompt", source_prompt=request)
 
         def prepare(request, *, output_root, **kwargs):
+            # same path contract as the real prepare_prompt_run: staging roots must be bound
+            if not kwargs.get("bound_roots"):
+                resolve_prompt_paths(
+                    request, source_root=kwargs.get("source_root"), output_root=output_root
+                )
             name = Path(output_root).name
             label = {"probe": "probe", "pilot": "pilot"}.get(name, "production")
             self.calls.append((label, {"output_root": output_root, **kwargs}))

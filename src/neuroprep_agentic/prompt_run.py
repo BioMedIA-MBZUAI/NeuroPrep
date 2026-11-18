@@ -531,13 +531,20 @@ def prepare_prompt_run(
     gpu_workers: int = 2,
     openjev_review: bool = False,
     policy: RunPolicy | None = None,
+    bound_roots: bool = False,
 ) -> dict[str, Any]:
     if not request.strip():
         raise ValueError("prompt request cannot be empty")
     if gpu_workers < 1 or gpu_workers > 32:
         raise ValueError("gpu_workers must be between 1 and 32")
     resolved_agentic_project = validated_agentic_project(agentic_project)
-    binding = resolve_prompt_paths(request, source_root=source_root, output_root=output_root)
+    # bound_roots: the caller (the autopilot) already bound the prompt's paths and stages the
+    # probe and pilot elsewhere; PromptPathBinding still enforces the allowed roots.
+    binding = (
+        PromptPathBinding(source_root=source_root, output_root=output_root)
+        if bound_roots and source_root and output_root
+        else resolve_prompt_paths(request, source_root=source_root, output_root=output_root)
+    )
     source = Path(binding.source_root)
     output = Path(binding.output_root)
     if output.exists() and any(output.iterdir()):
