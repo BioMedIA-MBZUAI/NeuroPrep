@@ -379,3 +379,17 @@ def test_backend_decision_routes_and_pilot_compares_alternatives(nfs_tmp: Path) 
     assert all(t.metadata["qualification_candidate"] is True for t in compared)
     smriprep = next(t for t in pilot.tasks if t.executor_id == "smriprep")
     assert smriprep.required and "qualification_candidate" not in smriprep.metadata
+
+
+def test_prefetch_covers_backends_a_pilot_will_compare(nfs_tmp: Path) -> None:
+    from neuroprep_agentic.images import required_images
+
+    plan = _compile(nfs_tmp).model_copy(
+        update={
+            "backend_qualification_tests": [
+                {"test_id": "smoke--structural_segment--fastsurfer", "executor_id": "fastsurfer"}
+            ]
+        }
+    )
+    specs = required_images(plan, builtin_executor_catalog())
+    assert "fastsurfer" in {spec.executor_id for spec in specs}

@@ -24,8 +24,12 @@ def required_images(
     catalog: ExecutorCatalog,
 ) -> tuple[ImageSpec, ...]:
     specs: dict[str, ImageSpec] = {}
-    selected = {
-        task.executor_id for task in plan.tasks if plan.runs(task)
+    selected = {task.executor_id for task in plan.tasks if plan.runs(task)}
+    # Backends a comparison pilot will qualify, so prefetching a target plan covers them.
+    selected |= {
+        str(item["executor_id"])
+        for item in (*plan.backend_qualification_tests, *plan.planned_smoke_tests)
+        if item.get("executor_id")
     }
     for executor_id in sorted(selected):
         definition = catalog.by_id(executor_id)
