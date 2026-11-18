@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from neuroprep_agentic.compiler import (
     compile_execution_plan,
     executable_task_fingerprint,
@@ -314,9 +316,19 @@ def test_every_executor_compiles_in_one_dataset_agnostic_dag(nfs_tmp: Path) -> N
         catalog,
     )
     assert {task.executor_id for task in plan.tasks} == {
-        definition.executor_id for definition in catalog.definitions
+        definition.executor_id for definition in catalog.definitions if not definition.alternative
     }
     assert all(task.command and task.artifacts for task in plan.tasks)
+    compared = compile_execution_plan(
+        graph,
+        PlanResult(tasks=logical_tasks),
+        layout,
+        catalog,
+        qualification_candidates={"deepprep", "fastsurfer"},
+    )
+    assert {task.executor_id for task in compared.tasks} == {
+        definition.executor_id for definition in catalog.definitions
+    }
     assert any(task.executor_id == "fsl-mrs" for task in plan.tasks)
     assert any(task.executor_id == "neuroprep-ultrasound" for task in plan.tasks)
     assert any(task.executor_id == "neuroprep-angio" for task in plan.tasks)
@@ -329,3 +341,41 @@ def test_container_commands_use_the_configured_runtime(monkeypatch, nfs_tmp: Pat
     assert container_tasks
     assert {t.command[0] for t in container_tasks} == {"/opt/apptainer/bin/apptainer"}
     assert not any("/usr/bin/singularity" in part for t in plan.tasks for part in t.command)
+
+
+def test_backend_decision_routes_and_pilot_compares_alternatives(nfs_tmp: Path) -> None:
+    graph, logical = build_graph_and_plan(_manifest(nfs_tmp), "compiler-test-identity-key")
+    layout = RunLayout(
+        dataset_id="compiler-test",
+        source_root=str(nfs_tmp / "source"),
+        bids_root=str(nfs_tmp / "bids"),
+        derivatives_root=str(nfs_tmp / "derivatives"),
+        work_root=str(nfs_tmp / "work"),
+        state_path=str(nfs_tmp / "state" / "tasks.sqlite"),
+        freesurfer_license=str(nfs_tmp / "license.txt"),
+    )
+    catalog = builtin_executor_catalog()
+    default = compile_execution_plan(graph, logical, layout, catalog)
+    segmenters = {t.executor_id for t in default.tasks if "anat_segment" in t.stages}
+    assert segmenters == {"deepprep"}
+
+    decision = [{"capability": "structural_segment", "selected_executor_id": "fastsurfer"}]
+    with pytest.raises(ValueError, match="requires a planned deepprep"):
+        compile_execution_plan(graph, logical, layout, catalog, backend_decisions=decision)
+    logical = PlanResult(tasks=[t for t in logical.tasks if t.plugin_id == "mri.t1w"])
+    routed = compile_execution_plan(graph, logical, layout, catalog, backend_decisions=decision)
+    task = next(t for t in routed.tasks if "anat_segment" in t.stages)
+    assert task.executor_id == "fastsurfer" and task.required
+    assert "deepprep" not in {t.executor_id for t in routed.tasks}
+    t1 = task.command[task.command.index("--t1") + 1]
+    assert t1.startswith("/source-data/sub-") and t1.endswith("_T1w.nii.gz")
+
+    pilot = compile_execution_plan(
+        graph, logical, layout, catalog, qualification_candidates={"deepprep", "fastsurfer"}
+    )
+    compared = [t for t in pilot.tasks if "anat_segment" in t.stages]
+    assert {t.executor_id for t in compared} == {"deepprep", "fastsurfer"}
+    assert all(not t.required and pilot.runs(t) for t in compared)
+    assert all(t.metadata["qualification_candidate"] is True for t in compared)
+    smriprep = next(t for t in pilot.tasks if t.executor_id == "smriprep")
+    assert smriprep.required and "qualification_candidate" not in smriprep.metadata

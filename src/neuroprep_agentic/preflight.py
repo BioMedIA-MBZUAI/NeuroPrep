@@ -61,7 +61,7 @@ def preflight_execution_plan(
     )
 
     used = {
-        task.executor_id for task in plan.tasks if task.required or plan.layout.execute_optional
+        task.executor_id for task in plan.tasks if plan.runs(task)
     }
     for executor_id in sorted(used):
         definition = catalog.by_id(executor_id)
@@ -136,7 +136,8 @@ def preflight_execution_plan(
         if not ants.is_file() or ants.stat().st_size == 0:
             missing_images.add(str(ants))
 
-    if any(task.executor_id in {"deepprep", "smriprep", "fmriprep"} for task in plan.tasks):
+    freesurfer_executors = {"deepprep", "fastsurfer", "smriprep", "fmriprep"}
+    if any(task.executor_id in freesurfer_executors for task in plan.tasks):
         license_path = plan.layout.freesurfer_license
         if not license_path or not Path(license_path).is_file():
             missing_executables.add("FreeSurfer license file")

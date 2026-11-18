@@ -5,6 +5,7 @@ import json
 import re
 import sys
 from collections import defaultdict
+from collections.abc import Collection
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,12 @@ def _format_values(
             spatial.append(modality)
     image = definition.image or ""
     image = image.format(container_root=layout.container_root)
+    primary = task.metadata.get("primary_anatomical_bids_input") if task else None
+    primary_t1w = (
+        str(Path("/source-data") / Path(str(primary)).relative_to(layout.bids_root))
+        if primary
+        else ""
+    )
     return {
         "dataset_id": layout.dataset_id,
         "source_root": layout.source_root,
@@ -102,6 +109,7 @@ def _format_values(
         "cpus": str(task.cpus if task else 1),
         "memory_gb": str(task.memory_gb if task else 4),
         "spatial_modalities": " ".join(spatial),
+        "primary_t1w": primary_t1w,
     }
 
 
@@ -287,7 +295,15 @@ def compile_execution_plan(
     backend_qualification_tests: list[dict[str, Any]] | None = None,
     planned_smoke_tests: list[dict[str, Any]] | None = None,
     backend_evidence: BackendEvidenceBinding | None = None,
+    qualification_candidates: Collection[str] = (),
 ) -> ExecutionPlan:
+    """Compile the executable DAG.
+
+    Each (plugin, stage) runs the executor its backend decision selected (the catalog
+    default otherwise). A comparison pilot passes ``qualification_candidates``: when two or
+    more executors of one route are candidates, all of them run, as optional tasks, so a
+    failing alternative loses the comparison instead of failing the pilot.
+    """
     if graph.dataset.dataset_id != layout.dataset_id:
         raise ValueError("graph and run layout dataset ids differ")
 
@@ -389,20 +405,39 @@ def compile_execution_plan(
         executable.append(validator_task)
         bids_validator_id = validator_task.task_id
 
+    selected = {
+        str(item["selected_executor_id"])
+        for item in (backend_decisions or [])
+        if item.get("selected_executor_id")
+    }
     grouped: dict[tuple[str, ...], list[TaskSpec]] = defaultdict(list)
     definitions: dict[tuple[str, ...], ExecutorDefinition] = {}
+    candidate_keys: set[tuple[str, ...]] = set()
     for task in logical_plan.tasks:
-        definition = catalog.resolve(task.plugin_id, task.stage)
-        key = _scope_key(definition, task)
-        grouped[key].append(task)
-        definitions[key] = definition
+        compared = [
+            item
+            for item in catalog.alternatives(task.plugin_id, task.stage)
+            if item.executor_id in qualification_candidates
+        ]
+        chosen = (
+            compared
+            if len(compared) > 1
+            else [catalog.resolve(task.plugin_id, task.stage, selected)]
+        )
+        for definition in chosen:
+            key = _scope_key(definition, task)
+            grouped[key].append(task)
+            definitions[key] = definition
+            if len(compared) > 1:
+                candidate_keys.add(key)
 
     pending_dependency_ids: dict[str, set[str]] = {}
     for key, members in grouped.items():
         definition = definitions[key]
         task_id = _execution_id(key)
         for member in members:
-            logical_to_execution[member.task_id] = task_id
+            # Pilot alternatives share a logical task; dependents follow the catalog default.
+            logical_to_execution.setdefault(member.task_id, task_id)
         pending_dependency_ids[task_id] = {
             dependency for member in members for dependency in member.depends_on
         }
@@ -426,7 +461,7 @@ def compile_execution_plan(
             if item in acquisitions
         }
         resource = _maximum_resource([member.resource for member in members])
-        required = any(member.required for member in members)
+        required = any(member.required for member in members) and key not in candidate_keys
         subject_id = members[0].subject_id
         sessions = {member.session_id for member in members}
         session_id = sessions.pop() if len(sessions) == 1 else None
@@ -463,9 +498,10 @@ def compile_execution_plan(
                 "required_metadata": list(definition.required_metadata),
                 "image_source": definition.image_source,
                 "notes": definition.notes,
+                **({"qualification_candidate": True} if key in candidate_keys else {}),
             },
         )
-        if definition.executor_id in {"smriprep", "deepprep"}:
+        if definition.executor_id in {"smriprep", "deepprep", "fastsurfer"}:
             primary = select_primary_t1(
                 [
                     (item, acquisitions[item].source.metadata)
@@ -557,10 +593,12 @@ def compile_execution_plan(
         for item in (backend_decisions or [])
         if item.get("selected_executor_id") in used_executor_ids
     ]
+    compared_capabilities = {item.get("capability") for item in relevant_decisions}
     relevant_smoke_tests = [
         item
         for item in (planned_smoke_tests or [])
         if item.get("executor_id") in used_executor_ids
+        or item.get("capability") in compared_capabilities
     ]
     return ExecutionPlan(
         dataset_id=layout.dataset_id,

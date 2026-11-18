@@ -590,3 +590,25 @@ def test_signing_key_is_nfs_scoped_mode_0600_and_non_overwriting(nfs_tmp: Path) 
     key_path.chmod(0o640)
     with pytest.raises(EvidenceValidationError, match="mode 0600"):
         read_signing_key(key_path)
+
+
+def test_execution_gate_allows_a_losing_alternative_but_not_a_failed_selection() -> None:
+    from neuroprep_agentic.backend_evidence import BackendEvidenceBinding, evidence_allows_execution
+
+    tests = [
+        {"test_id": "smoke--structural_segment--deepprep", "executor_id": "deepprep"},
+        {"test_id": "smoke--structural_segment--fastsurfer", "executor_id": "fastsurfer"},
+    ]
+    binding = BackendEvidenceBinding(
+        trust="verified",
+        source_path="/x/evidence.json",
+        document_sha256="0" * 64,
+        required_test_ids=[t["test_id"] for t in tests],
+        matched_test_ids=["smoke--structural_segment--deepprep"],
+        failed_test_ids=["smoke--structural_segment--fastsurfer"],
+    )
+    assert evidence_allows_execution(tests, binding, {"deepprep", "smriprep"})
+    assert not evidence_allows_execution(tests, binding, {"fastsurfer"})
+    assert not evidence_allows_execution(tests, binding)  # legacy rule: all must pass
+    undecided = binding.model_copy(update={"failed_test_ids": []})
+    assert not evidence_allows_execution(tests, undecided, {"deepprep"})

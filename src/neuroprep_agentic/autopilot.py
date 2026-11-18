@@ -243,7 +243,10 @@ def run_autopilot(
     target_plan_path = Path(probe["execution_plan"])
     target_plan = json.loads(target_plan_path.read_text(encoding="utf-8"))
     smoke_tests = list(target_plan.get("backend_qualification_tests") or [])
-    required = {str(item["executor_id"]) for item in smoke_tests}
+    # Alternatives run beside the routed backend on the same subjects, so a pilot only has
+    # to cover the backends the target plan routes to.
+    routed = {str(task["executor_id"]) for task in target_plan["tasks"]}
+    required = {str(item["executor_id"]) for item in smoke_tests} & routed
     stage(
         "probe",
         status="passed",
@@ -278,6 +281,7 @@ def run_autopilot(
                 request,
                 output_root=str(pilot_root),
                 bound_roots=True,
+                qualify_alternatives=True,
                 manifest_path=str(subset_path),
                 hardware_profile=profile,
                 policy=policy,
@@ -293,20 +297,34 @@ def run_autopilot(
         # its outcome is what the evidence document will attest.
         RunState(pilot_plan.layout.state_path).initialize(pilot_plan, str(pilot_plan_path))
         executed = _execute_locally(pilot_plan_path, worker=worker, idle_seconds=idle_seconds)
+        candidates = {
+            task.executor_id
+            for task in pilot_plan.tasks
+            if task.metadata.get("qualification_candidate") is True
+        }
         failed = _failed_executors(executed["state"])
         counts = executed["state"]["counts"]
-        if failed or set(counts) - {"complete", "skipped"}:
+        hard_failures = [executor for executor in failed if executor not in candidates]
+        unfinished = set(counts) - {"complete", "skipped", *TERMINAL_FAILURES}
+        if hard_failures or unfinished:
             raise fail(
                 "pilot_run",
-                "pilot did not complete; failing backends: " + (", ".join(failed) or "none"),
+                "pilot did not complete; failing backends: "
+                + (", ".join(hard_failures) or "none"),
                 counts=counts,
-                failed_executors=failed,
+                failed_executors=hard_failures,
             )
         release_root = Path(pilot_plan.layout.derivatives_root) / "release"
         finalize_execution_run(
             pilot_plan, RunState(pilot_plan.layout.state_path), str(release_root)
         )
-        stage("pilot_run", status="passed", counts=counts)
+        stage(
+            "pilot_run",
+            status="passed",
+            counts=counts,
+            compared_backends=sorted(candidates),
+            losing_backends=sorted(set(failed) & candidates),
+        )
 
         # 4. evidence: audited and signed against the target plan
         if key_path is None:
@@ -336,7 +354,10 @@ def run_autopilot(
             "evidence",
             status="passed",
             key_id=key_id,
-            tests={item.test_id: item.status for item in document.tests},
+            tests={
+                item.test_id: {"status": item.status, "runtime_seconds": item.runtime_seconds}
+                for item in document.tests
+            },
             target_git_commit=document.target_git_commit,
         )
     else:
@@ -360,6 +381,25 @@ def run_autopilot(
     except Exception as error:  # noqa: BLE001
         raise fail("run_plan", str(error)) from error
     stage("run_plan", status="passed", task_count=result["task_count"], ready=result["ready"])
+    backend_plan = json.loads((output / "backend-plan.json").read_text(encoding="utf-8"))
+    compared = {
+        str(item["capability"])
+        for item in smoke_tests
+        if sum(other["capability"] == item["capability"] for other in smoke_tests) > 1
+    }
+    stage(
+        "backend_selection",
+        status="passed",
+        decisions={
+            item["capability"]: {
+                "selected": item["selected_package"],
+                "reasons": item["selection_reasons"],
+                "rejected": item["rejected_candidates"],
+                "compared": item["capability"] in compared,
+            }
+            for item in backend_plan["decisions"]
+        },
+    )
 
     if execute == "local":
         plan_path = Path(result["execution_plan"])

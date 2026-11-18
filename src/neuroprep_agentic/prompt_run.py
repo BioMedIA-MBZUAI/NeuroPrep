@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from .backend_evidence import (
     current_git_commit,
+    evidence_allows_execution,
     read_signing_key,
+    revalidate_execution_evidence,
     validate_backend_evidence,
 )
 from .compiler import compile_execution_plan, save_execution_plan
@@ -131,6 +133,14 @@ def _extract_marked_path(pattern: re.Pattern[str], request: str) -> str | None:
     if not matches:
         return None
     return _clean_extracted_path(matches[-1].group("path"))
+
+
+def _compared_executor_ids(smoke_tests: list[dict[str, Any]]) -> set[str]:
+    """Executors of every capability with two or more backends to qualify."""
+    by_capability: dict[str, set[str]] = {}
+    for item in smoke_tests:
+        by_capability.setdefault(str(item["capability"]), set()).add(str(item["executor_id"]))
+    return {executor for group in by_capability.values() if len(group) > 1 for executor in group}
 
 
 def resolve_prompt_paths(
@@ -532,6 +542,7 @@ def prepare_prompt_run(
     openjev_review: bool = False,
     policy: RunPolicy | None = None,
     bound_roots: bool = False,
+    qualify_alternatives: bool = False,
 ) -> dict[str, Any]:
     if not request.strip():
         raise ValueError("prompt request cannot be empty")
@@ -654,7 +665,9 @@ def prepare_prompt_run(
         item.model_dump(mode="json") for item in unqualified_backend_plan.smoke_tests
     ]
     evidence: dict[str, str] = {}
+    runtimes: dict[str, float] = {}
     evidence_binding = None
+    signing_key: bytes | None = None
     if backend_evidence:
         signing_key = read_signing_key(backend_evidence_key) if backend_evidence_key else None
         loaded_evidence = validate_backend_evidence(
@@ -666,6 +679,7 @@ def prepare_prompt_run(
             target_git_commit=current_git_commit(layout.agentic_project),
         )
         evidence = dict(loaded_evidence.statuses)
+        runtimes = dict(loaded_evidence.runtimes)
         evidence_binding = loaded_evidence.binding
     backend_plan = plan_backends(
         policy,
@@ -673,21 +687,18 @@ def prepare_prompt_run(
         evidence,
         required_executor_ids=required_executor_ids,
         backend_evidence=evidence_binding,
+        runtimes=runtimes,
     )
     backend_path = output / "backend-plan.json"
     _write_json(backend_path, backend_plan)
     if not backend_plan.ready:
         raise ValueError("no integrated hardware-compatible backend for every required capability")
     should_initialize = initialize or submit
-    required_test_ids = {str(item["test_id"]) for item in target_smoke_tests}
-    verified_test_ids = {
-        test_id for test_id, status in evidence.items() if status == "passed"
+    selected_executor_ids = {
+        item.selected_executor_id for item in backend_plan.decisions if item.selected_executor_id
     }
-    evidence_is_verified = bool(
-        evidence_binding is not None and evidence_binding.trust == "verified"
-    )
-    if should_initialize and required_test_ids and (
-        not evidence_is_verified or not required_test_ids <= verified_test_ids
+    if should_initialize and not evidence_allows_execution(
+        target_smoke_tests, evidence_binding, selected_executor_ids
     ):
         raise ValueError(
             "initialization requires signed, target-bound backend evidence for every "
@@ -709,7 +720,18 @@ def prepare_prompt_run(
         backend_qualification_tests=target_smoke_tests,
         planned_smoke_tests=[item.model_dump(mode="json") for item in backend_plan.smoke_tests],
         backend_evidence=evidence_binding,
+        qualification_candidates=(
+            _compared_executor_ids(target_smoke_tests) if qualify_alternatives else ()
+        ),
     )
+    if should_initialize and evidence_binding is not None:
+        # The routed plan may run an alternative the default-routed target did not:
+        # re-check every executor it runs against its signed pilot command and image.
+        revalidate_execution_evidence(
+            plan=plan.model_dump(mode="json"),
+            signing_key=signing_key,
+            target_git_commit=current_git_commit(layout.agentic_project),
+        )
     plan_path = save_execution_plan(plan, str(output / "execution-plan.json"))
     asset_report = prepare_runtime_assets(plan)
     asset_path = output / "runtime-assets.json"

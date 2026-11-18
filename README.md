@@ -43,9 +43,19 @@ production task starts. Every stage is written to `autopilot-report.json` (with
 
 Evidence binds the git commit of `NEUROPREP_AGENTIC_PROJECT`, so the checkout must be
 clean. Without `--signing-key` a run-local `0600` key is created under the
-qualification root. Today each capability has one integrated backend, so the pilot
-qualifies that backend on your data and hardware; adding executor adapters for
-alternative packages makes the same loop choose among them.
+qualification root.
+
+**Comparing alternatives.** When a capability has more than one integrated,
+hardware-compatible backend, the pilot runs all of them on the same subjects (as
+optional tasks, so a backend that fails simply loses). The signed evidence records
+each backend's pass/fail and measured runtime, and production is routed to one
+backend per capability: failed backends are rejected; then a package named in the
+prompt wins; then the shortest measured pilot runtime. A capability whose backend
+another planned executor depends on (for example PETPrep on DeepPrep's
+reconstruction) is pinned to it. `autopilot-report.json` lists the compared
+backends, the losers and the reasons for each selection. Today whole-brain
+segmentation compares DeepPrep 25.1.0 and FastSurfer 2.6.1; other capabilities have
+one integrated backend until more adapters are added.
 
 ### Choosing a language model
 

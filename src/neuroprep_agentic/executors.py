@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
 from . import __version__
 from .execution_models import (
@@ -242,6 +242,59 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             ),
             source="https://github.com/pBFSLab/DeepPrep",
             notes="Offline network isolation is mandatory; FreeSurfer license is required.",
+        ),
+        ExecutorDefinition(
+            executor_id="fastsurfer",
+            version="2.6.1",
+            backend=ExecutorBackend.BIDS_APP,
+            scope=ExecutionScope.SUBJECT,
+            plugin_ids=("mri.t1w",),
+            stages=("anat_segment",),
+            alternative=True,
+            image="{container_root}/fastsurfer-2.6.1.sif",
+            image_source="docker://deepmi/fastsurfer:cu126-v2.6.1",
+            command=(
+                "{container_runtime}",
+                "exec",
+                "--nv",
+                "--cleanenv",
+                "--containall",
+                "--bind",
+                "{bids_root}:/source-data:ro",
+                "--bind",
+                "{derivatives_root}:/out",
+                "--bind",
+                "{freesurfer_license}:/fs_license.txt:ro",
+                "{image}",
+                "/fastsurfer/run_fastsurfer.sh",
+                "--t1",
+                "{primary_t1w}",
+                "--sid",
+                "sub-{subject}",
+                "--sd",
+                "/out/fastsurfer",
+                "--fs_license",
+                "/fs_license.txt",
+                "--threads",
+                "{cpus}",
+                "--device",
+                "auto",
+            ),
+            artifacts=(
+                artifact("preprocessed_t1w", "fastsurfer/sub-{subject}/mri/orig.mgz"),
+                artifact("brain_mask", "fastsurfer/sub-{subject}/mri/mask.mgz"),
+                artifact(
+                    "segmentation",
+                    "fastsurfer/sub-{subject}/mri/aparc.DKTatlas+aseg.deep.mgz",
+                ),
+                artifact("left_white_surface", "fastsurfer/sub-{subject}/surf/lh.white"),
+                artifact("right_white_surface", "fastsurfer/sub-{subject}/surf/rh.white"),
+            ),
+            source="https://github.com/Deep-MI/FastSurfer",
+            notes=(
+                "Alternative to DeepPrep for whole-brain segmentation and surfaces; "
+                "segmentation uses the DKT atlas (DeepPrep: Desikan-Killiany)."
+            ),
         ),
         ExecutorDefinition(
             executor_id="fmriprep",
@@ -914,6 +967,7 @@ class ExecutorCatalog:
         self._definitions = tuple(definitions)
         self._by_id: dict[str, ExecutorDefinition] = {}
         self._by_route: dict[tuple[str, str], ExecutorDefinition] = {}
+        self._alternatives: dict[tuple[str, str], list[ExecutorDefinition]] = {}
         for definition in self._definitions:
             if definition.executor_id in self._by_id:
                 raise ValueError(f"duplicate executor id: {definition.executor_id}")
@@ -921,6 +975,9 @@ class ExecutorCatalog:
             for plugin_id in definition.plugin_ids:
                 for stage in definition.stages:
                     route = (plugin_id, stage)
+                    if definition.alternative:
+                        self._alternatives.setdefault(route, []).append(definition)
+                        continue
                     if route in self._by_route:
                         previous = self._by_route[route]
                         raise ValueError(
@@ -928,16 +985,31 @@ class ExecutorCatalog:
                             f"{previous.executor_id}, {definition.executor_id}"
                         )
                     self._by_route[route] = definition
+        for route, alternatives in self._alternatives.items():
+            if route not in self._by_route:
+                names = ", ".join(item.executor_id for item in alternatives)
+                raise ValueError(f"alternative executors without a default for {route}: {names}")
 
     @property
     def definitions(self) -> tuple[ExecutorDefinition, ...]:
         return self._definitions
 
-    def resolve(self, plugin_id: str, stage: str) -> ExecutorDefinition:
+    def resolve(
+        self, plugin_id: str, stage: str, selected: Collection[str] = ()
+    ) -> ExecutorDefinition:
+        """The route's default executor, or the alternative a backend decision selected."""
+        for definition in self.alternatives(plugin_id, stage):
+            if definition.executor_id in selected:
+                return definition
+        return self.alternatives(plugin_id, stage)[0]
+
+    def alternatives(self, plugin_id: str, stage: str) -> tuple[ExecutorDefinition, ...]:
+        """Every executor for a route, default first."""
         try:
-            return self._by_route[(plugin_id, stage)]
+            default = self._by_route[(plugin_id, stage)]
         except KeyError as exc:
             raise KeyError(f"no executor for {plugin_id}/{stage}") from exc
+        return (default, *self._alternatives.get((plugin_id, stage), ()))
 
     def by_id(self, executor_id: str) -> ExecutorDefinition:
         try:

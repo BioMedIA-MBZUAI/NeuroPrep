@@ -95,12 +95,16 @@ def test_pilot_manifest_keeps_only_the_chosen_subjects_sources():
 class _Harness:
     """Fakes for every heavy tool; records the order and arguments of each call."""
 
-    def __init__(self, root: Path, monkeypatch, *, smoke=True, pilot_fails=False):
+    def __init__(
+        self, root: Path, monkeypatch, *, smoke=True, pilot_fails=False, compare=False, losing=None
+    ):
         self.calls: list[tuple[str, dict]] = []
         self.root = root
         self.policy_calls = 0
         self.pilot_fails = pilot_fails
         self.smoke = smoke
+        self.compare = compare
+        self.losing = losing
         source = root / "source"
         source.mkdir()
         self.request = f"My data is at {source}; save to {root / 'run'}"
@@ -121,16 +125,61 @@ class _Harness:
             out = Path(output_root)
             out.mkdir(parents=True, exist_ok=True)
             tests = (
-                [{"test_id": "smoke--structural_preprocess--smriprep", "executor_id": "smriprep"}]
+                [
+                    {
+                        "test_id": "smoke--structural_preprocess--smriprep",
+                        "executor_id": "smriprep",
+                        "capability": "structural_preprocess",
+                    }
+                ]
                 if self.smoke
                 else []
             )
+            tasks = [
+                {"subject_id": "sub-1", "executor_id": "smriprep", "resource_class": "gpu"},
+                {"subject_id": "sub-2", "executor_id": "fmriprep", "resource_class": "gpu"},
+            ]
+            if self.compare:
+                tests += [
+                    {
+                        "test_id": f"smoke--structural_segment--{name}",
+                        "executor_id": name,
+                        "capability": "structural_segment",
+                    }
+                    for name in ("deepprep", "fastsurfer")
+                ]
+                tasks.append(
+                    {"subject_id": "sub-1", "executor_id": "deepprep", "resource_class": "gpu"}
+                )
+                if kwargs.get("qualify_alternatives"):
+                    for task in tasks:
+                        if task["executor_id"] == "deepprep":
+                            task["metadata"] = {"qualification_candidate": True}
+                    tasks.append(
+                        {
+                            "subject_id": "sub-1",
+                            "executor_id": "fastsurfer",
+                            "resource_class": "gpu",
+                            "metadata": {"qualification_candidate": True},
+                        }
+                    )
+            (out / "backend-plan.json").write_text(
+                json.dumps(
+                    {
+                        "decisions": [
+                            {
+                                "capability": "structural_segment",
+                                "selected_package": "deepprep",
+                                "selection_reasons": ["fastest among equally qualified"],
+                                "rejected_candidates": {"fastsurfer": "smoke_test_failed"},
+                            }
+                        ]
+                    }
+                )
+            )
             plan = {
                 "dataset_id": "demo",
-                "tasks": [
-                    {"subject_id": "sub-1", "executor_id": "smriprep", "resource_class": "gpu"},
-                    {"subject_id": "sub-2", "executor_id": "fmriprep", "resource_class": "gpu"},
-                ],
+                "tasks": tasks,
                 "backend_qualification_tests": tests,
                 "layout": {
                     "state_path": str(out / "state.sqlite"),
@@ -210,7 +259,12 @@ class _Harness:
                 return SimpleNamespace(
                     layout=SimpleNamespace(**data["layout"]),
                     tasks=[
-                        SimpleNamespace(resource_class=t["resource_class"]) for t in data["tasks"]
+                        SimpleNamespace(
+                            resource_class=t["resource_class"],
+                            executor_id=t["executor_id"],
+                            metadata=t.get("metadata", {}),
+                        )
+                        for t in data["tasks"]
                     ],
                 )
 
@@ -222,10 +276,11 @@ class _Harness:
                 harness.calls.append(("initialize", {"plan_path": plan_path}))
 
             def summary(self):
-                failed = harness.pilot_fails and "pilot" in str(self.path)
+                failing = harness.losing or ("smriprep" if harness.pilot_fails else None)
+                failed = failing is not None and "pilot" in str(self.path)
                 return {
                     "counts": {"failed": 1, "complete": 1} if failed else {"complete": 2},
-                    "active": [{"status": "failed", "executor_id": "smriprep"}] if failed else [],
+                    "active": [{"status": "failed", "executor_id": failing}] if failed else [],
                 }
 
         def worker(state_path, worker_id, classes, **kwargs):
@@ -241,7 +296,9 @@ class _Harness:
             return SimpleNamespace(
                 tests=[
                     SimpleNamespace(
-                        test_id="smoke--structural_preprocess--smriprep", status="passed"
+                        test_id="smoke--structural_preprocess--smriprep",
+                        status="passed",
+                        runtime_seconds=1920.0,
                     )
                 ],
                 target_git_commit="a" * 40,
@@ -348,3 +405,24 @@ def test_refuses_a_non_empty_run_root(nfs_tmp, monkeypatch):
     (nfs_tmp / "run" / "keep.txt").write_text("x")
     with pytest.raises(ValueError, match="not empty"):
         harness.run()
+
+
+def test_pilot_compares_alternatives_and_a_loser_does_not_stop_the_run(nfs_tmp, monkeypatch):
+    harness = _Harness(nfs_tmp, monkeypatch, compare=True, losing="fastsurfer")
+    report = harness.run()
+
+    pilot = dict(harness.calls)["pilot"]
+    assert pilot["qualify_alternatives"] is True
+    assert report["stages"]["pilot_selection"]["subjects"] == ["sub-1"]  # covers routed backends
+    assert report["stages"]["pilot_run"]["compared_backends"] == ["deepprep", "fastsurfer"]
+    assert report["stages"]["pilot_run"]["losing_backends"] == ["fastsurfer"]
+    decision = report["stages"]["backend_selection"]["decisions"]["structural_segment"]
+    assert decision["selected"] == "deepprep" and decision["compared"] is True
+    assert report["outcome"] == "released"
+
+
+def test_a_failing_required_backend_still_stops_a_comparison_pilot(nfs_tmp, monkeypatch):
+    harness = _Harness(nfs_tmp, monkeypatch, compare=True, losing="smriprep")
+    with pytest.raises(AutopilotError, match="smriprep"):
+        harness.run()
+    assert "production" not in harness.labels()

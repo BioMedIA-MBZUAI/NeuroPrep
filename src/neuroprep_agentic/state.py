@@ -85,7 +85,7 @@ class RunState:
                     raise ValueError(f"task fingerprint changed: {task.task_id}")
                 if row:
                     continue
-                status = "pending" if task.required or plan.layout.execute_optional else "skipped"
+                status = "pending" if plan.runs(task) else "skipped"
                 connection.execute(
                     """
                     INSERT INTO tasks(

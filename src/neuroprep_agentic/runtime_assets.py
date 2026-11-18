@@ -105,14 +105,14 @@ def _sha256(path: Path) -> str:
 
 def _needs_nextflow(plan: ExecutionPlan) -> bool:
     return any(
-        task.executor_id.startswith("deepprep") and (task.required or plan.layout.execute_optional)
+        task.executor_id.startswith("deepprep") and plan.runs(task)
         for task in plan.tasks
     )
 
 
 def _needs_aslprep_patches(plan: ExecutionPlan) -> bool:
     return any(
-        task.executor_id == "aslprep" and (task.required or plan.layout.execute_optional)
+        task.executor_id == "aslprep" and plan.runs(task)
         for task in plan.tasks
     )
 

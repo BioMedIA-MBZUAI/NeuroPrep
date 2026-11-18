@@ -11,6 +11,7 @@ import sqlite3
 import stat
 import subprocess
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -160,14 +161,22 @@ class BackendTestEvidence(BaseModel):
     status: Literal["passed", "failed"]
     executor_signature_sha256: str
     pilot_task_count: int = Field(ge=1)
-    artifact_count: int = Field(ge=1)
+    artifact_count: int = Field(ge=0)
     artifact_audit_sha256: str
     image: FileIdentity
+    # Wall-clock seconds of the executor's successful pilot attempts (None if it failed).
+    runtime_seconds: float | None = Field(default=None, ge=0)
 
     @field_validator("executor_signature_sha256", "artifact_audit_sha256")
     @classmethod
     def valid_test_digest(cls, value: str) -> str:
         return _validated_sha256(value, "backend test digest")
+
+    @model_validator(mode="after")
+    def passed_tests_have_artifacts(self) -> BackendTestEvidence:
+        if self.status == "passed" and self.artifact_count < 1:
+            raise ValueError("a passed backend test must audit at least one artifact")
+        return self
 
 
 class EvidenceSignature(BaseModel):
@@ -256,6 +265,7 @@ class BackendEvidenceBinding(BaseModel):
     target_protocol_sha256: str | None = None
     required_test_ids: list[str] = Field(default_factory=list)
     matched_test_ids: list[str] = Field(default_factory=list)
+    failed_test_ids: list[str] = Field(default_factory=list)
 
     @field_validator(
         "document_sha256",
@@ -283,6 +293,7 @@ class LoadedBackendEvidence(BaseModel):
 
     statuses: dict[str, Literal["passed", "failed"]]
     binding: BackendEvidenceBinding
+    runtimes: dict[str, float] = Field(default_factory=dict)
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -472,6 +483,10 @@ def _normalized_artifacts(plan: dict[str, Any], task: dict[str, Any]) -> list[di
     return result
 
 
+def _runs_executor(plan: dict[str, Any], executor_id: str) -> bool:
+    return any(task.get("executor_id") == executor_id for task in plan.get("tasks", []))
+
+
 def executor_signature(plan: dict[str, Any], executor_id: str) -> str:
     signatures: set[bytes] = set()
     for task in plan.get("tasks", []):
@@ -496,7 +511,6 @@ def executor_signature(plan: dict[str, Any], executor_id: str) -> str:
                 "memory_gb": task.get("memory_gb"),
                 "gpus": task.get("gpus"),
             },
-            "required": task.get("required"),
             "artifacts": _normalized_artifacts(plan, task),
             "executor_metadata": {
                 key: metadata.get(key)
@@ -589,6 +603,8 @@ def _artifact_audit(
         record = records.get(str(task.get("task_id")))
         if record is None:
             raise EvidenceValidationError(f"pilot state is missing task {task.get('task_id')}")
+        if executor_id is None and _losing_candidate(task, record):
+            continue
         if record["status"] != "complete" or record["return_code"] != 0:
             raise EvidenceValidationError(f"pilot task is not complete: {task.get('task_id')}")
         if record["fingerprint"] != task.get("fingerprint"):
@@ -647,6 +663,40 @@ def _artifact_audit(
     return len(inventory), _sha256_bytes(_canonical_bytes(inventory))
 
 
+def _losing_candidate(task: dict[str, Any], record: dict[str, Any]) -> bool:
+    """A comparison-pilot alternative that did not complete: it loses, it does not fail."""
+    return (
+        task.get("metadata", {}).get("qualification_candidate") is True
+        and record["status"] != "complete"
+    )
+
+
+def _executor_runtime_seconds(state_path: str | Path, task_ids: list[str]) -> float | None:
+    state = Path(state_path).resolve(strict=True)
+    connection = sqlite3.connect(state.as_uri() + "?mode=ro", uri=True)
+    try:
+        rows = list(
+            connection.execute(
+                "SELECT task_id,started_at,finished_at FROM attempts "
+                f"WHERE status='complete' AND task_id IN ({','.join('?' * len(task_ids))})",
+                task_ids,
+            )
+        )
+    except sqlite3.OperationalError:
+        return None  # state written before attempts were recorded: runtime unknown
+    finally:
+        connection.close()
+    if {str(row[0]) for row in rows} != set(task_ids):
+        return None
+    return round(
+        sum(
+            (datetime.fromisoformat(finished) - datetime.fromisoformat(started)).total_seconds()
+            for _task_id, started, finished in rows
+        ),
+        1,
+    )
+
+
 def _read_terminal_state(
     state_path: str | Path, plan: dict[str, Any], plan_path: str | Path
 ) -> tuple[dict[str, dict[str, Any]], dict[str, int], dict[str, str]]:
@@ -667,8 +717,13 @@ def _read_terminal_state(
     if len(rows) != len(plan.get("tasks", [])):
         raise EvidenceValidationError("pilot state task count differs from plan")
     counts = Counter(str(row["status"]) for row in rows)
-    if counts != Counter({"complete": len(rows)}):
-        raise EvidenceValidationError("pilot state is not terminal-success complete")
+    tasks = {str(task.get("task_id")): task for task in plan.get("tasks", [])}
+    for row in rows:
+        task = tasks.get(str(row["task_id"]), {})
+        if row["status"] != "complete" and not (
+            _losing_candidate(task, row) and row["status"] in {"failed", "blocked"}
+        ):
+            raise EvidenceValidationError("pilot state is not terminal-success complete")
     return (
         {str(row["task_id"]): row for row in rows},
         dict(sorted(counts.items())),
@@ -843,33 +898,41 @@ def build_backend_evidence(
         ):
             continue
         pilot_signature = executor_signature(pilot_plan, executor_id)
-        target_signature = executor_signature(target_plan, executor_id)
-        if pilot_signature != target_signature:
-            raise EvidenceValidationError(f"executor command mismatch for {executor_id}")
         pilot_image = _image_path(pilot_plan, executor_id)
-        target_image = _image_path(target_plan, executor_id)
-        if pilot_image != target_image:
-            raise EvidenceValidationError(f"executor image mismatch for {executor_id}")
+        # An alternative the target does not (yet) route to is checked when a plan runs it.
+        if _runs_executor(target_plan, executor_id):
+            if pilot_signature != executor_signature(target_plan, executor_id):
+                raise EvidenceValidationError(f"executor command mismatch for {executor_id}")
+            if pilot_image != _image_path(target_plan, executor_id):
+                raise EvidenceValidationError(f"executor image mismatch for {executor_id}")
         if pilot_image not in image_cache:
             image_cache[pilot_image] = _file_identity(pilot_image)
-        artifact_count, artifact_digest = _artifact_audit(
-            pilot_plan, records, executor_id
+        executor_tasks = [
+            task for task in pilot_plan.get("tasks", []) if task.get("executor_id") == executor_id
+        ]
+        passed = all(
+            records[str(task["task_id"])]["status"] == "complete" for task in executor_tasks
         )
-        pilot_task_count = sum(
-            task.get("executor_id") == executor_id for task in pilot_plan.get("tasks", [])
-        )
+        if passed:
+            artifact_count, artifact_digest = _artifact_audit(pilot_plan, records, executor_id)
+            runtime = _executor_runtime_seconds(
+                pilot_state_path, [str(task["task_id"]) for task in executor_tasks]
+            )
+        else:
+            artifact_count, artifact_digest, runtime = 0, _sha256_bytes(b""), None
         tests.append(
             BackendTestEvidence(
                 test_id=test_id,
                 capability=str(smoke.get("capability") or ""),
                 package_id=str(smoke.get("package_id") or ""),
                 executor_id=executor_id,
-                status="passed",
+                status="passed" if passed else "failed",
                 executor_signature_sha256=pilot_signature,
-                pilot_task_count=pilot_task_count,
+                pilot_task_count=len(executor_tasks),
                 artifact_count=artifact_count,
                 artifact_audit_sha256=artifact_digest,
                 image=image_cache[pilot_image],
+                runtime_seconds=runtime,
             )
         )
     if not tests:
@@ -992,6 +1055,7 @@ def validate_backend_evidence(
     if signed_smoke_tests != current_smoke_tests:
         raise EvidenceValidationError("backend evidence target smoke tests mismatch")
     statuses: dict[str, Literal["passed", "failed"]] = {}
+    runtimes: dict[str, float] = {}
     for item in document.tests:
         smoke = required.get(item.test_id)
         if smoke is None:
@@ -1000,6 +1064,11 @@ def validate_backend_evidence(
             )
         if str(smoke["executor_id"]) != item.executor_id:
             raise EvidenceValidationError(f"backend evidence executor mismatch: {item.test_id}")
+        statuses[item.test_id] = item.status
+        if item.runtime_seconds is not None:
+            runtimes[item.test_id] = item.runtime_seconds
+        if not _runs_executor(target_plan, item.executor_id):
+            continue  # not routed here; re-checked by any plan that runs it
         if executor_signature(target_plan, item.executor_id) != item.executor_signature_sha256:
             raise EvidenceValidationError(f"backend evidence command mismatch: {item.test_id}")
         image = _image_path(target_plan, item.executor_id)
@@ -1007,7 +1076,6 @@ def validate_backend_evidence(
             raise EvidenceValidationError(f"backend evidence image mismatch: {item.test_id}")
         if image.stat().st_size != item.image.size or sha256_file(image) != item.image.sha256:
             raise EvidenceValidationError(f"backend evidence image hash mismatch: {item.test_id}")
-        statuses[item.test_id] = item.status
     if not statuses:
         raise EvidenceValidationError("target smoke intersection is empty")
     binding = BackendEvidenceBinding(
@@ -1025,13 +1093,22 @@ def validate_backend_evidence(
         matched_test_ids=sorted(
             test_id for test_id, status in statuses.items() if status == "passed"
         ),
+        failed_test_ids=sorted(
+            test_id for test_id, status in statuses.items() if status == "failed"
+        ),
     )
-    return LoadedBackendEvidence(statuses=statuses, binding=binding)
+    return LoadedBackendEvidence(statuses=statuses, binding=binding, runtimes=runtimes)
 
 
 def evidence_allows_execution(
-    planned_smoke_tests: list[dict[str, Any]], binding: BackendEvidenceBinding | None
+    planned_smoke_tests: list[dict[str, Any]],
+    binding: BackendEvidenceBinding | None,
+    executor_ids: set[str] | None = None,
 ) -> bool:
+    """Every qualification test is decided, and every backend that will run passed.
+
+    Without ``executor_ids`` every test must have passed (the pre-comparison rule).
+    """
     required = set(binding.required_test_ids) if binding else set()
     required.update(
         str(item.get("test_id")) for item in planned_smoke_tests if item.get("test_id")
@@ -1040,7 +1117,15 @@ def evidence_allows_execution(
         return True
     if binding is None or binding.trust != "verified":
         return False
-    return required <= set(binding.matched_test_ids)
+    passed = set(binding.matched_test_ids)
+    if executor_ids is None:
+        return required <= passed
+    running = {
+        str(item.get("test_id"))
+        for item in planned_smoke_tests
+        if item.get("test_id") and item.get("executor_id") in executor_ids
+    }
+    return required <= passed | set(binding.failed_test_ids) and running <= passed
 
 
 def revalidate_execution_evidence(
@@ -1080,7 +1165,8 @@ def revalidate_execution_evidence(
         raise EvidenceValidationError(
             "embedded backend evidence provenance differs from its signed source"
         )
-    if not evidence_allows_execution(qualification_tests, loaded.binding):
+    running = {str(task.get("executor_id")) for task in plan.get("tasks", [])}
+    if not evidence_allows_execution(qualification_tests, loaded.binding, running):
         raise EvidenceValidationError(
             "signed backend evidence does not pass every qualification test"
         )

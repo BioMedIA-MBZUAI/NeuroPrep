@@ -20,6 +20,16 @@
 - Optional site TemplateFlow cache: when `$NEUROPREP_TOOLS_ROOT/templateflow` exists, its
   files are copied into every run's TemplateFlow cache, so BIDS Apps need no S3 access at
   run time (on CIAI, TemplateFlow downloads failed with connection resets).
+- Backend comparison. Executors can be declared as alternatives for a stage; the
+  pilot runs every compared alternative as an optional qualification candidate,
+  signed evidence records pass/fail and measured runtime per backend, and
+  production routes each capability to the selected backend (failed → rejected,
+  prompt preference, then fastest). Backends required by other planned executors
+  are pinned. The execution gates require every comparison to be decided and every
+  backend that runs to have passed; a routed plan is re-validated against the signed
+  pilot before it initializes.
+- FastSurfer 2.6.1 (`deepmi/fastsurfer:cu126-v2.6.1`) as an alternative to DeepPrep
+  for whole-brain segmentation and surfaces.
 - `NEUROPREP_CONTAINER_RUNTIME` selects the Singularity or Apptainer executable;
   otherwise `singularity`, then `apptainer`, is found on `PATH`. Executor commands
   use a `{container_runtime}` placeholder instead of `/usr/bin/singularity`.
@@ -43,6 +53,8 @@
 - Dependency `mne-nirs` (unused) replaced by `h5py`, which SNIRF reading needs;
   installs no longer pull nilearn, scikit-learn or seaborn.
 - Version is single-sourced from `neuroprep_agentic.__version__`.
+- Executor signatures in evidence no longer include the task's `required` flag
+  (a scheduling choice, not executor behaviour). Evidence and catalog digests change.
 
 ### Fixed
 - Policy compilation failed outright when a model listed packages outside the allowlist

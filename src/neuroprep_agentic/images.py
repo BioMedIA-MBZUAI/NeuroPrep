@@ -25,7 +25,7 @@ def required_images(
 ) -> tuple[ImageSpec, ...]:
     specs: dict[str, ImageSpec] = {}
     selected = {
-        task.executor_id for task in plan.tasks if task.required or plan.layout.execute_optional
+        task.executor_id for task in plan.tasks if plan.runs(task)
     }
     for executor_id in sorted(selected):
         definition = catalog.by_id(executor_id)

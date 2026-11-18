@@ -302,7 +302,7 @@ def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
         candidate("structural_preprocess", "freesurfer"),
         candidate("structural_preprocess", "synthseg", gpu=1),
         integrated("structural_segment", "deepprep", "deepprep", gpu=1, gpu_memory=8),
-        candidate("structural_segment", "fastsurfer", gpu=1),
+        integrated("structural_segment", "fastsurfer", "fastsurfer", gpu=1, gpu_memory=8),
         candidate("structural_segment", "synthseg", gpu=1),
         integrated("bold_preprocess", "fmriprep", "fmriprep"),
         candidate("bold_preprocess", "deepprep", gpu=1),
@@ -336,9 +336,25 @@ def plan_backends(
     *,
     required_executor_ids: set[str] | frozenset[str] | None = None,
     backend_evidence: BackendEvidenceBinding | None = None,
+    runtimes: dict[str, float] | None = None,
 ) -> BackendPlan:
+    """Choose one backend per capability.
+
+    Among integrated, hardware-compatible candidates: a failed smoke test rejects; then
+    prompt preference, objective match and passed evidence score; equal scores go to the
+    shortest measured pilot runtime (``runtimes`` by smoke test id), then the package id.
+    A capability whose backend another planned executor requires is pinned to it.
+    """
+    from .executors import builtin_executor_catalog
+
     observed = evidence or {}
+    measured = runtimes or {}
     portfolio = builtin_backend_portfolio()
+    catalog = builtin_executor_catalog()
+    pinned_by: dict[str, str] = {}
+    for executor_id in sorted(required_executor_ids or ()):
+        for required in catalog.by_id(executor_id).requires_executor_ids:
+            pinned_by.setdefault(required, executor_id)
     if required_executor_ids is not None:
         active_capabilities = {
             item.capability
@@ -356,9 +372,16 @@ def plan_backends(
     for capability in sorted(grouped):
         scored: list[tuple[int, BackendCandidate, list[str]]] = []
         rejected: dict[str, str] = {}
+        pinned = next(
+            (item.executor_id for item in grouped[capability] if item.executor_id in pinned_by),
+            None,
+        )
         for item in grouped[capability]:
             if item.integration_state != "integrated":
                 rejected[item.package_id] = "adapter_not_integrated_or_qualified"
+                continue
+            if pinned is not None and item.executor_id != pinned:
+                rejected[item.package_id] = f"{pinned_by[pinned]}_requires_{pinned}"
                 continue
             if item.min_gpus > hardware.gpus:
                 rejected[item.package_id] = "insufficient_gpus"
@@ -384,8 +407,18 @@ def plan_backends(
             if observed.get(test_id) == "passed":
                 score += 40
                 reasons.append("representative smoke evidence passed")
+                if test_id in measured:
+                    reasons.append(f"pilot runtime {measured[test_id] / 60:.1f} min")
             scored.append((score, item, reasons))
-        scored.sort(key=lambda value: (-value[0], value[1].package_id))
+        scored.sort(
+            key=lambda value: (
+                -value[0],
+                measured.get(f"smoke--{capability}--{value[1].package_id}", float("inf")),
+                value[1].package_id,
+            )
+        )
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            scored[0][2].append("fastest among equally qualified alternatives")
         # Qualify every eligible challenger, not only the provisional winner.
         # The execution compiler still fingerprints only the selected backend
         # into a production DAG; these specifications drive separate bounded

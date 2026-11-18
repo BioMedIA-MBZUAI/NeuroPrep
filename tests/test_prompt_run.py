@@ -348,6 +348,14 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     monkeypatch.setattr(prompt_run, "read_signing_key", lambda _path: b"x" * 32)
     monkeypatch.setattr(prompt_run, "current_git_commit", lambda _path: "4" * 40)
     monkeypatch.setattr(prompt_run, "validate_backend_evidence", verified_evidence)
+    revalidated: list[set[str]] = []
+    monkeypatch.setattr(
+        prompt_run,
+        "revalidate_execution_evidence",
+        lambda *, plan, signing_key, target_git_commit: revalidated.append(
+            {task["executor_id"] for task in plan["tasks"]}
+        ),
+    )
     submitted: dict[str, object] = {}
 
     def fake_submit(plan_path, gpu_workers, agentic_project, backend_evidence_key=None):
@@ -378,6 +386,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
     )
 
     assert result["ready"] is True
+    assert len(revalidated) == 1 and "deepprep" in revalidated[0]
     assert result["submitted"] is True
     assert submitted["backend_evidence_key"] == cli_only_key
     assert cli_only_key not in json.dumps(result["launch"], sort_keys=True)

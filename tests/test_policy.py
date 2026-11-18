@@ -189,3 +189,59 @@ def test_hardware_detection_honors_slurm_allocation(monkeypatch) -> None:
     assert profile.cpus == 8
     assert profile.memory_gb == 64
     assert profile.gpus == 0
+
+
+SEGMENT = "structural_segment"
+DEEPPREP, FASTSURFER = f"smoke--{SEGMENT}--deepprep", f"smoke--{SEGMENT}--fastsurfer"
+T1_ONLY = {"smriprep", "deepprep"}
+
+
+def _segmenter(plan) -> str | None:
+    return next(d for d in plan.decisions if d.capability == SEGMENT).selected_package
+
+
+def test_alternatives_are_both_qualified_before_evidence() -> None:
+    plan = plan_backends(RunPolicy(), _gpu(), required_executor_ids=T1_ONLY)
+    assert {t.test_id for t in plan.smoke_tests} >= {DEEPPREP, FASTSURFER}
+
+
+def test_fastest_passing_alternative_wins() -> None:
+    evidence = {DEEPPREP: "passed", FASTSURFER: "passed"}
+    fast_deepprep = plan_backends(
+        RunPolicy(), _gpu(), evidence, required_executor_ids=T1_ONLY,
+        runtimes={DEEPPREP: 1440.0, FASTSURFER: 2700.0},
+    )
+    assert _segmenter(fast_deepprep) == "deepprep"
+    fast_fastsurfer = plan_backends(
+        RunPolicy(), _gpu(), evidence, required_executor_ids=T1_ONLY,
+        runtimes={DEEPPREP: 1440.0, FASTSURFER: 600.0},
+    )
+    decision = next(d for d in fast_fastsurfer.decisions if d.capability == SEGMENT)
+    assert decision.selected_package == "fastsurfer"
+    assert "fastest among equally qualified alternatives" in decision.selection_reasons
+    assert not [t for t in fast_fastsurfer.smoke_tests if t.capability == SEGMENT]
+
+
+def test_preference_beats_speed_and_failure_rejects() -> None:
+    evidence = {DEEPPREP: "passed", FASTSURFER: "passed"}
+    preferred = plan_backends(
+        RunPolicy(source_prompt="use DeepPrep", preferred_packages=["deepprep"]),
+        _gpu(), evidence, required_executor_ids=T1_ONLY,
+        runtimes={DEEPPREP: 1440.0, FASTSURFER: 600.0},
+    )
+    assert _segmenter(preferred) == "deepprep"
+    failed = plan_backends(
+        RunPolicy(), _gpu(), {DEEPPREP: "failed", FASTSURFER: "passed"},
+        required_executor_ids=T1_ONLY,
+    )
+    decision = next(d for d in failed.decisions if d.capability == SEGMENT)
+    assert decision.selected_package == "fastsurfer"
+    assert decision.rejected_candidates["deepprep"] == "smoke_test_failed"
+
+
+def test_a_backend_another_executor_requires_is_pinned() -> None:
+    plan = plan_backends(RunPolicy(), _gpu(), required_executor_ids=T1_ONLY | {"petprep"})
+    decision = next(d for d in plan.decisions if d.capability == SEGMENT)
+    assert decision.selected_package == "deepprep"
+    assert decision.rejected_candidates["fastsurfer"] == "petprep_requires_deepprep"
+    assert FASTSURFER not in {t.test_id for t in plan.smoke_tests}

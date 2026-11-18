@@ -48,6 +48,9 @@ class ExecutorDefinition(BaseModel):
     artifacts: tuple[ArtifactRequirement, ...] = ()
     required_metadata: tuple[str, ...] = ()
     requires_executor_ids: tuple[str, ...] = ()
+    # True: competes with the default executor of its stages; runs only when chosen
+    # by a backend decision, or as a qualification candidate in a comparison pilot.
+    alternative: bool = False
     source: str
     notes: str = ""
 
@@ -169,6 +172,14 @@ class ExecutionPlan(BaseModel):
     backend_qualification_tests: list[dict[str, Any]] = Field(default_factory=list)
     planned_smoke_tests: list[dict[str, Any]] = Field(default_factory=list)
     backend_evidence: BackendEvidenceBinding | None = None
+
+    def runs(self, task: ExecutableTask) -> bool:
+        """Whether the worker executes this task (optional tasks are skipped by default)."""
+        return (
+            task.required
+            or self.layout.execute_optional
+            or task.metadata.get("qualification_candidate") is True
+        )
 
 
 class PreflightCheck(BaseModel):
