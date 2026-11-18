@@ -14,6 +14,7 @@ set -euo pipefail
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 APP_ROOT=${NEUROPREP_AGENTIC_PROJECT:-/nfs-stor/salma.hassan/NeuroPrep-agentic}
+. "$APP_ROOT/scripts/ciai_env.sh"
 RUNTIME_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/finalize-$SLURM_JOB_ID
 test -n "$NEUROPREP_EXECUTION_PLAN_PATH"
 test -n "$NEUROPREP_RELEASE_ROOT"

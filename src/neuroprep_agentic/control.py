@@ -10,6 +10,7 @@ from crewai.flow import Flow, listen, router, start
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from . import _PROJECT_ROOT
 from .crews.control import kickoff_control_crew
 from .execution_models import ExecutionPlan
 from .executors import builtin_executor_catalog
@@ -18,7 +19,7 @@ from .registry import builtin_registry
 from .services import build_ingest_plan, load_manifest
 from .settings import AgenticSettings, WorkflowName, validated_cluster_path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = _PROJECT_ROOT
 load_dotenv(PROJECT_ROOT / ".env")
 
 

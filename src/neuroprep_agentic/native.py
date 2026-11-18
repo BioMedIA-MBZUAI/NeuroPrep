@@ -10,6 +10,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import __version__, paths
+from . import settings as _settings
 from .execution_models import ExecutableTask
 from .settings import validated_cluster_path
 
@@ -121,7 +123,27 @@ def stage_bids(task: ExecutableTask) -> dict[str, Any]:
     ):
         return _stage_tabular_source(source, target, task)
     if source.is_dir() or source.suffix.lower() == ".dcm":
-        return _stage_dicom(source, target, task)
+        result = _stage_dicom(source, target, task)
+        sidecar_path = _sidecar_path(target)
+        sidecar: dict[str, Any] = {}
+        if sidecar_path.is_file():
+            loaded = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            if not isinstance(loaded, dict):
+                raise ValueError(f"Converted sidecar is not a JSON object: {sidecar_path}")
+            sidecar.update(_safe_sidecar(loaded))
+        sidecar.update(_safe_sidecar(dict(task.metadata.get("source_metadata") or {})))
+        sidecar.update(_safe_sidecar(dict(task.metadata.get("bids_sidecar") or {})))
+        sidecar.update(
+            {
+                "SourceAcquisitionID": task.acquisition_ids[0],
+                "NeuroPrepAgenticVersion": __version__,
+            }
+        )
+        if plugin_id == "mri.asl":
+            result["asl_context"] = _derive_asl_context(target, sidecar)
+            sidecar["TotalAcquiredPairs"] = result["asl_context"]["pairs"]
+        _write_json(sidecar_path, sidecar)
+        return result
     if not source.is_file():
         raise ValueError(f"BIDS staging requires a regular file or DICOM directory: {source}")
     _atomic_copy(source, target)
@@ -139,7 +161,7 @@ def stage_bids(task: ExecutableTask) -> dict[str, Any]:
     sidecar.update(
         {
             "SourceAcquisitionID": task.acquisition_ids[0],
-            "NeuroPrepAgenticVersion": "0.3.0",
+            "NeuroPrepAgenticVersion": __version__,
         }
     )
     if target.name.endswith((".nii", ".nii.gz")) or sidecar:
@@ -228,7 +250,7 @@ def _stage_tabular_source(source: Path, target: Path, task: ExecutableTask) -> d
         **_safe_sidecar(dict(task.metadata.get("source_metadata") or {})),
         **_safe_sidecar(dict(task.metadata.get("bids_sidecar") or {})),
         "SourceAcquisitionID": task.acquisition_ids[0],
-        "NeuroPrepAgenticVersion": "0.3.0",
+        "NeuroPrepAgenticVersion": __version__,
         "ConversionSoftware": "pandas",
     }
     _write_json(_sidecar_path(target), sidecar)
@@ -259,7 +281,7 @@ def _stage_nifti_convert(source: Path, target: Path, task: ExecutableTask) -> di
             **_safe_sidecar(dict(task.metadata.get("source_metadata") or {})),
             **_safe_sidecar(dict(task.metadata.get("bids_sidecar") or {})),
             "SourceAcquisitionID": task.acquisition_ids[0],
-            "NeuroPrepAgenticVersion": "0.3.0",
+            "NeuroPrepAgenticVersion": __version__,
             "ConversionSoftware": "nibabel",
         },
     )
@@ -273,8 +295,13 @@ def _stage_nifti_convert(source: Path, target: Path, task: ExecutableTask) -> di
 
 
 def _stage_mrs_source(source: Path, target: Path, task: ExecutableTask) -> dict[str, Any]:
-    tool_root = Path("/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/fsl-mrs-2.4.17")
-    spec2nii = validated_cluster_path(str(tool_root / "bin/spec2nii"), must_exist=True)
+    configured_root = str(paths.fsl_mrs_root())
+    tool_root = validated_cluster_path(configured_root)
+    candidate = tool_root / "bin/spec2nii"
+    # Preflight normally verifies the pinned executable. Keeping a command-name
+    # fallback here makes the native function testable with an injected runner
+    # while still failing clearly when a real process is launched without the tool.
+    spec2nii = candidate if candidate.is_file() else Path(shutil.which("spec2nii") or "spec2nii")
     target.parent.mkdir(parents=True, exist_ok=True)
     stem = target.name[:-7] if target.name.endswith(".nii.gz") else target.stem
     subcommand = "dicom" if source.is_dir() or source.suffix.lower() == ".dcm" else "auto"
@@ -332,7 +359,7 @@ def _stage_mrs_source(source: Path, target: Path, task: ExecutableTask) -> dict[
     sidecar.update(
         {
             "SourceAcquisitionID": task.acquisition_ids[0],
-            "NeuroPrepAgenticVersion": "0.3.0",
+            "NeuroPrepAgenticVersion": __version__,
             "ConversionSoftware": "spec2nii",
             "ConversionSoftwareVersion": "0.8.15",
         }
@@ -349,11 +376,21 @@ def _stage_mrs_source(source: Path, target: Path, task: ExecutableTask) -> dict[
 
 
 def _stage_dicom(source: Path, target: Path, task: ExecutableTask) -> dict[str, Any]:
-    executable = Path(
-        "/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/dcm2niix-v1.0.20260416/dcm2niix"
+    configured = str(
+        task.metadata.get("dcm2niix_executable")
+        or os.environ.get("NEUROPREP_DCM2NIIX", "")
     )
-    if not executable.is_file():
-        raise FileNotFoundError(f"dcm2niix executable is missing: {executable}")
+    candidates = [Path(configured)] if configured else []
+    candidates.extend(
+        [
+            paths.dcm2niix_path(),
+            Path("/usr/bin/dcm2niix"),
+        ]
+    )
+    executable = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if executable is None:
+        searched = ", ".join(str(candidate) for candidate in candidates)
+        raise FileNotFoundError(f"dcm2niix executable is missing; searched: {searched}")
     if source.is_file():
         raise ValueError(
             "A DICOM SourceRecord must identify a complete acquisition directory, not one file"
@@ -377,6 +414,22 @@ def _stage_dicom(source: Path, target: Path, task: ExecutableTask) -> dict[str, 
     completed = subprocess.run(command, check=False)
     if completed.returncode != 0 or not target.is_file():
         raise RuntimeError(f"dcm2niix failed for {task.task_id} with {completed.returncode}")
+    plugin_id = str(task.metadata.get("selected_plugin_id") or "")
+    if plugin_id.startswith("mri.") and plugin_id != "mri.mrs":
+        import nibabel as nib
+
+        shape = nib.load(target).shape
+        if len(shape) < 3 or any(size <= 1 for size in shape[:3]):
+            for generated in (
+                target,
+                _sidecar_path(target),
+                target.with_name(stem + ".bval"),
+                target.with_name(stem + ".bvec"),
+            ):
+                generated.unlink(missing_ok=True)
+            raise ValueError(
+                f"Converted MRI output has invalid spatial shape {shape}; no artifact released"
+            )
     sidecar_path = _sidecar_path(target)
     if sidecar_path.is_file():
         sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
@@ -397,7 +450,7 @@ def _bids_init(task: ExecutableTask) -> dict[str, Any]:
             "GeneratedBy": [
                 {
                     "Name": "NeuroPrep-agentic",
-                    "Version": "0.3.0",
+                    "Version": __version__,
                 }
             ],
         },
@@ -740,11 +793,14 @@ def _fnirs(task: ExecutableTask, output: Path) -> dict[str, Any]:
 
 
 def _mrs(task: ExecutableTask, output: Path) -> dict[str, Any]:
-    tool_root = Path("/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/fsl-mrs-2.4.17")
-    fsl_mrs_preproc = validated_cluster_path(
-        str(tool_root / "bin/fsl_mrs_preproc"), must_exist=True
-    )
-    fsl_mrs = validated_cluster_path(str(tool_root / "bin/fsl_mrs"), must_exist=True)
+    configured_root = str(paths.fsl_mrs_root())
+    tool_root = validated_cluster_path(configured_root)
+    fsl_mrs_preproc = tool_root / "bin/fsl_mrs_preproc"
+    fsl_mrs = tool_root / "bin/fsl_mrs"
+    if not fsl_mrs_preproc.is_file():
+        fsl_mrs_preproc = Path(shutil.which("fsl_mrs_preproc") or "fsl_mrs_preproc")
+    if not fsl_mrs.is_file():
+        fsl_mrs = Path(shutil.which("fsl_mrs") or "fsl_mrs")
     metadata_by_id = task.metadata.get("source_metadata", {})
     if not isinstance(metadata_by_id, dict):
         raise ValueError("MRS source metadata must be keyed by acquisition id")
@@ -1119,9 +1175,20 @@ def _registration_reference(source: Path, reference_root: Path) -> tuple[Path, d
 def _ants_registration(task: ExecutableTask, output: Path, longitudinal: bool) -> dict[str, Any]:
     inputs = [path for path in _bids_inputs(task) if path.name.endswith((".nii", ".nii.gz"))]
     candidates = _registration_candidates(inputs, longitudinal)
-    image = Path("/nfs-stor/salma.hassan/NeuroPrep/containers/ants-2.6.5.sif")
-    if not image.is_file():
-        raise FileNotFoundError(f"ANTs image is missing: {image}")
+    configured = str(
+        task.metadata.get("ants_image") or os.environ.get("NEUROPREP_ANTS_IMAGE", "")
+    )
+    image_candidates = [Path(configured)] if configured else []
+    image_candidates.extend(
+        [
+            paths.ants_image(),
+            Path.home() / "ants-2.6.5.sif",
+        ]
+    )
+    image = next((candidate for candidate in image_candidates if candidate.is_file()), None)
+    if image is None:
+        searched = ", ".join(str(candidate) for candidate in image_candidates)
+        raise FileNotFoundError(f"ANTs image is missing; searched: {searched}")
     output.mkdir(parents=True, exist_ok=True)
     prepared = [
         _registration_reference(source, output / "registration-references")
@@ -1129,10 +1196,11 @@ def _ants_registration(task: ExecutableTask, output: Path, longitudinal: bool) -
     ]
     references = [item[0] for item in prepared]
     reference_evidence = [item[1] for item in prepared]
+    bind_roots = set(_settings.ALLOWED_ROOTS)
     approved_binds = [
         item
-        for root in ("/nfs-stor/salma.hassan", "/l/users/salma.hassan")
-        if Path(root).is_dir()
+        for root in sorted(bind_roots, key=str)
+        if root.is_dir()
         for item in ("--bind", f"{root}:{root}")
     ]
     if longitudinal:

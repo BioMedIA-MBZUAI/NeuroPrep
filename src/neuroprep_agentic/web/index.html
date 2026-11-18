@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Plan and validate multimodal NeuroPrep studies.">
+    <title>NeuroPrep</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="NeuroPrep home">
+        <span class="brand-mark" aria-hidden="true">N</span>
+        <span>NeuroPrep</span>
+      </a>
+      <div class="service-state"><span class="pulse"></span> Local planning interface</div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Agentic multimodal preprocessing</p>
+        <h1>Describe the study.<br><span>Inspect the plan.</span></h1>
+        <p class="lede">NeuroPrep translates scientific intent into a typed policy, discovers the data and compiles a resource-aware workflow. Execution authority remains deterministic.</p>
+      </section>
+
+      <div class="workspace">
+        <section class="panel composer" aria-labelledby="composer-title">
+          <div class="panel-heading">
+            <div>
+              <p class="step">01 · Study request</p>
+              <h2 id="composer-title">What should NeuroPrep prepare?</h2>
+            </div>
+            <button id="example" class="text-button" type="button">Use example</button>
+          </div>
+
+          <form id="plan-form">
+            <label for="request">Scientific request</label>
+            <textarea id="request" name="request" rows="7" maxlength="4000" required placeholder="Prepare every available structural, diffusion and resting-state acquisition. Prefer established pipelines, generate QC reports and a model-ready index."></textarea>
+
+            <div class="field-grid">
+              <div>
+                <label for="source-root">Source data directory</label>
+                <input id="source-root" name="source_root" type="text" required autocomplete="off" placeholder="/approved/path/incoming">
+              </div>
+              <div>
+                <label for="output-root">New output directory</label>
+                <input id="output-root" name="output_root" type="text" required autocomplete="off" placeholder="/approved/path/neuroprep-run">
+              </div>
+            </div>
+
+            <div class="field-grid compact">
+              <div>
+                <label for="dataset-id">Dataset label <span>optional</span></label>
+                <input id="dataset-id" name="dataset_id" type="text" maxlength="80" autocomplete="off" placeholder="study-name">
+              </div>
+              <label class="check-row" for="openjev-review">
+                <input id="openjev-review" name="openjev_review" type="checkbox">
+                <span><strong>OpenJev advisory review</strong><small>Review unresolved acquisitions without changing execution authority.</small></span>
+              </label>
+            </div>
+
+            <div id="error" class="message error" role="alert" hidden></div>
+            <button id="submit" class="primary" type="submit">
+              <span>Compile and validate plan</span><span aria-hidden="true">→</span>
+            </button>
+            <p class="safety-note">This action inventories data and writes planning artifacts. It does not initialize workers, submit jobs or release derivatives.</p>
+          </form>
+        </section>
+
+        <aside class="panel trace" aria-labelledby="trace-title">
+          <p class="step">02 · Deterministic boundary</p>
+          <h2 id="trace-title">What happens next</h2>
+          <ol class="stages">
+            <li><span>1</span><div><strong>Interpret intent</strong><small>Agent produces only the typed scientific policy.</small></div></li>
+            <li><span>2</span><div><strong>Discover acquisitions</strong><small>Files and metadata are resolved from the source.</small></div></li>
+            <li><span>3</span><div><strong>Compile the graph</strong><small>Qualified tools, dependencies and resources are bound.</small></div></li>
+            <li><span>4</span><div><strong>Run preflight</strong><small>Inputs, images, assets and release gates are checked.</small></div></li>
+          </ol>
+          <div class="boundary"><span>Agent authority ends here</span><p>No paths, commands, containers, scheduler directives, task state or release decisions are accepted from the model.</p></div>
+        </aside>
+      </div>
+
+      <section id="results" class="results" aria-live="polite" hidden>
+        <div class="results-heading">
+          <div><p class="step">03 · Compiled study</p><h2>Plan summary</h2></div>
+          <span id="readiness" class="badge"></span>
+        </div>
+        <div class="metrics">
+          <article><span>Acquisitions</span><strong id="record-count">—</strong></article>
+          <article><span>Executable tasks</span><strong id="task-count">—</strong></article>
+          <article><span>Quarantined</span><strong id="quarantine-count">—</strong></article>
+          <article><span>Unsupported</span><strong id="unsupported-count">—</strong></article>
+        </div>
+        <div class="result-grid">
+          <article class="result-card"><h3>Scientific policy</h3><dl id="policy"></dl></article>
+          <article class="result-card"><h3>Backend decisions</h3><div id="backends" class="backend-list"></div></article>
+        </div>
+        <details><summary>Preflight evidence</summary><pre id="preflight"></pre></details>
+        <details><summary>Planning artifacts</summary><pre id="artifacts"></pre></details>
+      </section>
+    </main>
+
+    <footer>NeuroPrep · local, evidence-gated study compilation</footer>
+  </body>
+</html>

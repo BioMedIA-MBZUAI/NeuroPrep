@@ -21,9 +21,19 @@ CREW_CONFIGS: dict[WorkflowName, str] = {
 
 
 def _llm(model: str, settings: AgenticSettings) -> LLM:
+    endpoint = settings.endpoint(model)
+    # LiteLLM spells every OpenAI-style server (vLLM, LM Studio, llama.cpp, ...) "openai/".
+    litellm_model = (
+        f"openai/{endpoint.model}"
+        if endpoint.provider in {"vllm", "lmstudio", "llamacpp", "openai_compatible"}
+        else endpoint.spec
+    )
+    local = endpoint.provider not in {"openai", "openrouter", "anthropic"}
     return LLM(
-        model=model,
-        base_url=settings.ollama_base_url,
+        model=litellm_model,
+        # Hosted providers use LiteLLM's own endpoint unless a *_BASE_URL override was set.
+        base_url=endpoint.base_url if local or endpoint.provider != "anthropic" else None,
+        api_key=endpoint.api_key or ("EMPTY" if local and endpoint.provider != "ollama" else None),
         temperature=0,
         timeout=300.0,
         max_retries=2,

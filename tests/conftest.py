@@ -11,7 +11,7 @@ import pytest
 _TEST_RUNTIME_ROOT = Path(
     os.environ.get(
         "NEUROPREP_TEST_RUNTIME_ROOT",
-        "/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/tests",
+        str(Path.home() / ".cache" / "neuroprep-agentic" / "tests"),
     )
 ).resolve()
 _TEST_RUNTIME_OVERRIDE = os.environ.get("NEUROPREP_TEST_RUNTIME_ROOT")
@@ -26,7 +26,7 @@ os.environ["OTEL_SDK_DISABLED"] = "true"
 
 # Import the package before test modules import CrewAI directly. Its package
 # initializer redirects the two CrewAI 1.15.13 Path.home()-hardcoded settings
-# locations to approved project state on NFS.
+# locations to isolated project state.
 import neuroprep_agentic as _neuroprep_agentic  # noqa: E402, F401
 
 if _TEST_RUNTIME_OVERRIDE:
@@ -38,18 +38,23 @@ if _TEST_RUNTIME_OVERRIDE:
         _settings.ALLOWED_ROOTS = (*_settings.ALLOWED_ROOTS, _TEST_RUNTIME_ROOT)
 
 
+def _remove_tree(root: Path) -> None:
+    for _attempt in range(20):
+        try:
+            shutil.rmtree(root)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(0.1)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def nfs_test_environment():
     _TEST_SESSION_ROOT.mkdir(parents=True, exist_ok=True)
     yield
-    for _attempt in range(20):
-        try:
-            shutil.rmtree(_TEST_SESSION_ROOT)
-            break
-        except OSError:
-            time.sleep(0.1)
-    else:
-        shutil.rmtree(_TEST_SESSION_ROOT, ignore_errors=True)
+    _remove_tree(_TEST_SESSION_ROOT)
 
 
 @pytest.fixture
@@ -57,4 +62,4 @@ def nfs_tmp() -> Path:
     root = _TEST_RUNTIME_ROOT / uuid.uuid4().hex
     root.mkdir(parents=True)
     yield root
-    shutil.rmtree(root)
+    _remove_tree(root)

@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from . import paths
 from .execution_models import ExecutionPlan
 from .executors import ExecutorCatalog
 from .settings import validated_cluster_path
@@ -55,9 +56,9 @@ def catalog_images(catalog: ExecutorCatalog) -> tuple[ImageSpec, ...]:
             continue
         if not definition.image_source:
             raise ValueError(f"executor image has no immutable source: {definition.executor_id}")
-        path = definition.image.format(container_root="/nfs-stor/salma.hassan/NeuroPrep/containers")
+        path = definition.image.format(container_root=str(paths.container_root()))
         specs[path] = ImageSpec(definition.executor_id, path, definition.image_source)
-    ants_path = "/nfs-stor/salma.hassan/NeuroPrep/containers/ants-2.6.5.sif"
+    ants_path = str(paths.ants_image())
     specs[ants_path] = ImageSpec(
         "neuroprep-registration-runtime", ants_path, "docker://antsx/ants:v2.6.5"
     )

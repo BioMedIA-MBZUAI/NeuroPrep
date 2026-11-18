@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
+from neuroprep_agentic import paths
 from neuroprep_agentic.execution_models import (
     ExecutableTask,
     ExecutionPlan,
@@ -84,15 +86,14 @@ def test_qsiprep_preflight_checks_the_agentic_eddy_wrapper(nfs_tmp: Path) -> Non
         nfs_tmp,
         {"acq-a": {"PhaseEncodingDirection": "j-"}},
     )
-    missing_wrapper = (
-        "/nfs-stor/salma.hassan/NeuroPrep-agentic/"
-        "src/neuroprep_agentic/resources/eddy_cuda10.2"
-    )
+    # The wrapper ships inside the package (source checkout and pip install alike) and
+    # must keep its executable bit, so preflight finds it wherever the package lives.
+    wrapper = paths.package_resources() / "eddy_cuda10.2"
+    assert wrapper.is_file() and os.access(wrapper, os.X_OK)
 
     report = preflight_execution_plan(plan, catalog, check_inputs=False)
 
-    if not Path(missing_wrapper).exists():
-        assert missing_wrapper in report.missing_runtime_assets
+    assert str(wrapper) not in report.missing_runtime_assets
     assert not any(
         path.endswith("NeuroPrep-multimodal-v4/src/neuroprep/resources/eddy_cuda10.2")
         for path in report.missing_runtime_assets

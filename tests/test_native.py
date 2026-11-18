@@ -315,6 +315,86 @@ def test_asl_staging_derives_evidence_backed_context(nfs_tmp: Path) -> None:
     assert sidecar["TotalAcquiredPairs"] == 2
 
 
+def test_dicom_asl_staging_derives_context_and_strips_phi(monkeypatch, nfs_tmp: Path) -> None:
+    source = nfs_tmp / "dicom-asl"
+    source.mkdir()
+    (source / "image.dcm").write_bytes(b"DICOM")
+    target = nfs_tmp / "bids" / "sub-01_asl.nii.gz"
+    task = _task(
+        nfs_tmp, executor_id="neuroprep-bids-stage", acquisition_ids=["asl"], inputs=[source]
+    )
+    task.metadata.update(
+        {
+            "source_path": str(source),
+            "bids_path": str(target),
+            "selected_plugin_id": "mri.asl",
+            "source_metadata": {"M0Type": "Included", "PatientName": "must-not-leak"},
+            "bids_sidecar": {},
+            "dcm2niix_executable": str(nfs_tmp / "dcm2niix"),
+        }
+    )
+    Path(task.metadata["dcm2niix_executable"]).write_bytes(b"test executable")
+
+    def fake_run(command, **_kwargs):
+        data = np.zeros((3, 3, 3, 5), dtype=np.float32)
+        data[..., 0] = 100
+        data[..., 1] = 10
+        data[..., 2] = 20
+        data[..., 3] = 11
+        data[..., 4] = 21
+        target.parent.mkdir(parents=True, exist_ok=True)
+        nib.save(nib.Nifti1Image(data, np.eye(4)), target)
+        target.with_name("sub-01_asl.json").write_text(
+            json.dumps({"PatientID": "must-not-leak", "PatientPosition": "HFS"})
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(native.subprocess, "run", fake_run)
+    result = native.stage_bids(task)
+    assert result["asl_context"]["pairs"] == 2
+    sidecar = json.loads(target.with_name("sub-01_asl.json").read_text())
+    assert sidecar["PatientPosition"] == "HFS"
+    assert sidecar["TotalAcquiredPairs"] == 2
+    assert "PatientID" not in sidecar
+    assert "PatientName" not in sidecar
+
+
+def test_dicom_mri_staging_rejects_single_slice_mosaic(monkeypatch, nfs_tmp: Path) -> None:
+    source = nfs_tmp / "dicom-asl"
+    source.mkdir()
+    (source / "image.dcm").write_bytes(b"DICOM")
+    target = nfs_tmp / "bids" / "sub-01_asl.nii.gz"
+    task = _task(
+        nfs_tmp, executor_id="neuroprep-bids-stage", acquisition_ids=["asl"], inputs=[source]
+    )
+    task.metadata.update(
+        {
+            "source_path": str(source),
+            "bids_path": str(target),
+            "selected_plugin_id": "mri.asl",
+            "source_metadata": {},
+            "bids_sidecar": {},
+            "dcm2niix_executable": str(nfs_tmp / "dcm2niix"),
+        }
+    )
+    Path(task.metadata["dcm2niix_executable"]).write_bytes(b"test executable")
+
+    def fake_run(command, **_kwargs):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        nib.save(
+            nib.Nifti1Image(np.zeros((64, 64, 1, 20), dtype=np.float32), np.eye(4)),
+            target,
+        )
+        target.with_name("sub-01_asl.json").write_text("{}")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(native.subprocess, "run", fake_run)
+    with np.testing.assert_raises_regex(ValueError, "invalid spatial shape"):
+        native.stage_bids(task)
+    assert not target.exists()
+    assert not target.with_name("sub-01_asl.json").exists()
+
+
 def test_bids_init_and_validator_wrapper(monkeypatch, nfs_tmp: Path) -> None:
     bids_root = nfs_tmp / "bids"
     init = _task(
@@ -359,6 +439,9 @@ def test_bids_init_and_validator_wrapper(monkeypatch, nfs_tmp: Path) -> None:
 def test_multimodal_registration_uses_t1_and_3d_dwi_reference(
     monkeypatch, nfs_tmp: Path
 ) -> None:
+    ants_image = nfs_tmp / "ants-2.6.5.sif"
+    ants_image.write_bytes(b"test image")
+    monkeypatch.setenv("NEUROPREP_ANTS_IMAGE", str(ants_image))
     fieldmap = nfs_tmp / "sub-01_magnitude1.nii.gz"
     dwi = nfs_tmp / "sub-01_dwi.nii.gz"
     t1w = nfs_tmp / "sub-01_T1w.nii.gz"
@@ -398,3 +481,65 @@ def test_multimodal_registration_uses_t1_and_3d_dwi_reference(
     assert all("magnitude1" not in item["source"] for item in result["references"])
     assert result["references"][1]["strategy"] == "b0mean"
     assert result["transforms"]
+
+
+def _write_minimal_snirf(path: Path) -> None:
+    """Two-wavelength, one-channel CW recording with a 1 Hz cardiac signal (SNIRF 1.0)."""
+
+    import h5py
+
+    sfreq, n_times = 10.0, 6000
+    times = np.arange(n_times) / sfreq
+    rng = np.random.default_rng(0)
+    cardiac = np.sin(2 * np.pi * 1.0 * times)
+    data = np.stack(
+        [
+            1.0 + 0.010 * cardiac + 0.001 * rng.standard_normal(n_times),
+            1.2 + 0.012 * cardiac + 0.001 * rng.standard_normal(n_times),
+        ],
+        axis=1,
+    )
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("formatVersion", data=np.bytes_("1.0"))
+        block = handle.create_group("nirs/data1")
+        block.create_dataset("dataTimeSeries", data=data)
+        block.create_dataset("time", data=times)
+        for index, wavelength in ((1, 1), (2, 2)):
+            measurement = block.create_group(f"measurementList{index}")
+            for key, value in (
+                ("sourceIndex", 1),
+                ("detectorIndex", 1),
+                ("wavelengthIndex", wavelength),
+                ("dataType", 1),
+                ("dataTypeIndex", 1),
+            ):
+                measurement.create_dataset(key, data=np.int32(value))
+        probe = handle.create_group("nirs/probe")
+        probe.create_dataset("wavelengths", data=np.array([760.0, 850.0]))
+        probe.create_dataset("sourcePos3D", data=np.array([[0.0, 0.0, 0.0]]))
+        probe.create_dataset("detectorPos3D", data=np.array([[30.0, 0.0, 0.0]]))
+        tags = handle.create_group("nirs/metaDataTags")
+        for key, value in (
+            ("SubjectID", "sub01"),
+            ("MeasurementDate", "2026-01-01"),
+            ("MeasurementTime", "12:00:00"),
+            ("LengthUnit", "mm"),
+            ("TimeUnit", "s"),
+            ("FrequencyUnit", "Hz"),
+        ):
+            tags.create_dataset(key, data=np.bytes_(value))
+
+
+def test_fnirs_reads_snirf_and_writes_haemoglobin(nfs_tmp: Path) -> None:
+    # Guards the h5py dependency that mne.io.read_raw_snirf needs.
+    source = nfs_tmp / "sub-01_ses-01_task-rest_nirs.snirf"
+    _write_minimal_snirf(source)
+    task = _task(nfs_tmp, executor_id="neuroprep-fnirs", acquisition_ids=["a"], inputs=[source])
+
+    result = native._fnirs(task, nfs_tmp / "out")
+
+    assert result["status"] == "pass"
+    assert result["channels"] == 2
+    assert result["sampling_frequency"] == 10.0
+    assert result["scalp_coupling_median"] > 0.9
+    assert Path(result["target"]).is_file()

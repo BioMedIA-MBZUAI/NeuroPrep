@@ -1,0 +1,169 @@
+{
+  "all_images_exact": true,
+  "all_outputs_finite": true,
+  "all_passed": true,
+  "all_sidecars_phi_free": true,
+  "benchmark": "prospective-pseudonymized-multimodal-smoke",
+  "case_count": 5,
+  "fail_closed_count": 1,
+  "modalities": [
+    "FLAIR",
+    "T1w",
+    "asl",
+    "bold",
+    "dwi"
+  ],
+  "processed_count": 4,
+  "rows": [
+    {
+      "case": "case-001",
+      "dicom_files": 208,
+      "direct_conversion_seconds": 0.5029075420461595,
+      "extraction_seconds": 1.0815895169507712,
+      "image_sha256_equal": true,
+      "input_finite_fraction": 1.0,
+      "input_nonzero_fraction": 0.9680280636518429,
+      "input_shape": [
+        208,
+        240,
+        256
+      ],
+      "modality": "T1w",
+      "neuroprep_conversion_seconds": 0.4404750009998679,
+      "neuroprep_overhead_seconds": -0.06243254104629159,
+      "outcome": "processed",
+      "output_finite_fraction": 1.0,
+      "output_nonzero_fraction": 0.9680280636518429,
+      "output_shape": [
+        208,
+        240,
+        256
+      ],
+      "phi_keys_remaining": [],
+      "preprocess_method": "N4 bias-field correction",
+      "preprocess_seconds": 18.339838303043507,
+      "released_artifact_count": 1,
+      "status": "pass"
+    },
+    {
+      "case": "case-002",
+      "dicom_files": 160,
+      "direct_conversion_seconds": 0.3701785890152678,
+      "extraction_seconds": 0.9080231949919835,
+      "image_sha256_equal": true,
+      "input_finite_fraction": 1.0,
+      "input_nonzero_fraction": 0.8782014846801758,
+      "input_shape": [
+        160,
+        256,
+        256
+      ],
+      "modality": "FLAIR",
+      "neuroprep_conversion_seconds": 0.36443165002856404,
+      "neuroprep_overhead_seconds": -0.0057469389867037535,
+      "outcome": "processed",
+      "output_finite_fraction": 1.0,
+      "output_nonzero_fraction": 0.8782014846801758,
+      "output_shape": [
+        160,
+        256,
+        256
+      ],
+      "phi_keys_remaining": [],
+      "preprocess_method": "N4 bias-field correction",
+      "preprocess_seconds": 15.17247068299912,
+      "released_artifact_count": 1,
+      "status": "pass"
+    },
+    {
+      "case": "case-003",
+      "dicom_files": 20,
+      "direct_conversion_seconds": 0.2293661910807714,
+      "extraction_seconds": 0.9417297979816794,
+      "image_sha256_equal": "not_released",
+      "input_finite_fraction": 1.0,
+      "input_nonzero_fraction": 0.8605855305989584,
+      "input_shape": [
+        768,
+        768,
+        1,
+        20
+      ],
+      "modality": "asl",
+      "neuroprep_conversion_seconds": 0.22365052194800228,
+      "neuroprep_overhead_seconds": -0.005715669132769108,
+      "outcome": "fail_closed",
+      "output_finite_fraction": "not_released",
+      "output_nonzero_fraction": "not_released",
+      "output_shape": [],
+      "phi_keys_remaining": [],
+      "preprocess_method": "fail-closed invalid-mosaic rejection",
+      "preprocess_seconds": 0.0,
+      "released_artifact_count": 0,
+      "status": "pass"
+    },
+    {
+      "case": "case-004",
+      "dicom_files": 55,
+      "direct_conversion_seconds": 1.354679835960269,
+      "extraction_seconds": 1.747132645919919,
+      "image_sha256_equal": true,
+      "input_finite_fraction": 1.0,
+      "input_nonzero_fraction": 0.97468438513821,
+      "input_shape": [
+        116,
+        116,
+        81,
+        55
+      ],
+      "modality": "dwi",
+      "neuroprep_conversion_seconds": 1.310201636981219,
+      "neuroprep_overhead_seconds": -0.04447819897904992,
+      "outcome": "processed",
+      "output_finite_fraction": 1.0,
+      "output_nonzero_fraction": 0.9992467447629952,
+      "output_shape": [
+        116,
+        116,
+        81
+      ],
+      "phi_keys_remaining": [],
+      "preprocess_method": "adaptive non-local-means denoising (b=0 reference volume 0)",
+      "preprocess_seconds": 3.495218064985238,
+      "released_artifact_count": 1,
+      "status": "pass"
+    },
+    {
+      "case": "case-005",
+      "dicom_files": 197,
+      "direct_conversion_seconds": 0.9755855259718373,
+      "extraction_seconds": 1.6121492360252887,
+      "image_sha256_equal": true,
+      "input_finite_fraction": 1.0,
+      "input_nonzero_fraction": 0.9642820975749119,
+      "input_shape": [
+        64,
+        64,
+        49,
+        197
+      ],
+      "modality": "bold",
+      "neuroprep_conversion_seconds": 0.986705465009436,
+      "neuroprep_overhead_seconds": 0.01111993903759867,
+      "outcome": "processed",
+      "output_finite_fraction": 1.0,
+      "output_nonzero_fraction": 0.9796815210459183,
+      "output_shape": [
+        64,
+        64,
+        49
+      ],
+      "phi_keys_remaining": [],
+      "preprocess_method": "adaptive non-local-means denoising (20-volume temporal-mean reference)",
+      "preprocess_seconds": 0.8176816959166899,
+      "released_artifact_count": 1,
+      "status": "pass"
+    }
+  ],
+  "schema_version": "1.0"
+}

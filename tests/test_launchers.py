@@ -1,5 +1,13 @@
 from pathlib import Path
 
+import pytest
+
+# Site launchers live in the git repository only; the sdist and wheel do not ship them.
+pytestmark = pytest.mark.skipif(
+    not Path("scripts/launch_neuroprep_run.sh").is_file(),
+    reason="scripts/ not present (installed from a source distribution)",
+)
+
 
 def test_launcher_reports_partial_scheduler_submissions() -> None:
     launcher = Path("scripts/launch_neuroprep_run.sh").read_text()

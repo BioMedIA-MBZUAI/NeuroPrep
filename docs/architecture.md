@@ -113,8 +113,8 @@ and future cohorts therefore use the same modality plugins and executor catalog.
 ## Cluster topology
 
 The launch workflow submits a GPU CrewAI/Ollama review job, then independent GPU
-workers, then a GPU finalizer. Every job uses NFS chdir, excludes gpu-03, places
-XDG/tmp/cache/state below approved cluster roots, and checks Singularity before
+workers, then a GPU finalizer. Every job uses a shared-storage chdir, places
+XDG/tmp/cache/state below the configured data roots, and checks Singularity before
 work starts. Scientific containers receive task-specific NFS-backed home, `/tmp`,
 and `/var/tmp` mounts.
 

@@ -13,3 +13,4 @@ output/
 runtime/
 state/
 .env
+.playwright-cli/

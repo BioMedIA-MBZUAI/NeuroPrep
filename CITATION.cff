@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: >-
+  If you use NeuroPrep in research that leads to a publication, presentation or
+  other output, please cite it using the metadata below. NeuroPrep is licensed
+  for noncommercial use only (PolyForm Noncommercial 1.0.0).
+title: "NeuroPrep: resource-aware agentic study compilation for multimodal neuroimaging"
+type: software
+authors:
+  - family-names: Hassan
+    given-names: Salma
+    affiliation: Mohamed bin Zayed University of Artificial Intelligence
+version: 0.5.0
+date-released: 2026-11-18
+license: PolyForm-Noncommercial-1.0.0
+keywords:
+  - neuroimaging
+  - BIDS
+  - workflow
+  - agentic
+  - multimodal
+  - preprocessing
+# After publication, add the article here so citation tools prefer it, e.g.:
+# preferred-citation:
+#   type: article
+#   title: "NeuroPrep: resource-aware agentic study compilation for multimodal neuroimaging"
+#   authors:
+#     - family-names: Hassan
+#       given-names: Salma
+#   journal: "Nature Methods"
+#   year: 2027
+#   doi: 10.xxxx/xxxxx

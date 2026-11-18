@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import paths
 from .backend_evidence import BackendEvidenceBinding
 from .bids import bids_relative_path
 from .execution_models import (
@@ -85,7 +87,8 @@ def _format_values(
         "agentic_project": layout.agentic_project,
         "neuroprep_project": layout.neuroprep_project,
         "container_root": layout.container_root,
-        "agentic_python": str(Path(layout.agentic_project) / ".venv/bin/python"),
+        "agentic_python": sys.executable,
+        "agentic_resources": str(paths.package_resources()),
         "subject": (subject_id or "dataset").removeprefix("sub-"),
         "session": (session_id or "single").removeprefix("ses-"),
         "context_path": context_path,

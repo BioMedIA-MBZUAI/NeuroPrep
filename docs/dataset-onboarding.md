@@ -5,8 +5,8 @@ provides source evidence; it does not add cohort-specific preprocessing code.
 
 ## Required inputs
 
-- One or more immutable source roots under `/nfs-stor/salma.hassan` or
-  `/l/users/salma.hassan`.
+- One or more immutable source roots under a configured data root (home,
+  `NEUROPREP_HOME` or `NEUROPREP_ALLOWED_ROOTS`).
 - The cohort adapter identifier (`generic` is valid when no named adapter fits).
 - A strong private identity key and, only when cross-cohort identity merging is
   intended, an explicit source-ID crosswalk.

@@ -24,6 +24,13 @@ from .images import (
     prefetch_catalog_images,
     prefetch_images,
 )
+from .openjev import (
+    OpenJevClient,
+    check_boolean,
+    choose_next_action,
+    route_acquisition,
+    score_urgency,
+)
 from .policy import (
     RunPolicy,
     compile_prompt_policy,
@@ -39,8 +46,13 @@ from .registry import builtin_registry
 from .release import finalize_execution_run
 from .runtime import run_worker
 from .runtime_assets import prepare_runtime_assets, runtime_asset_inventory
+from .runtime_check import runtime_check
 from .services import build_graph_and_plan, build_ingest_plan, load_manifest
-from .settings import validated_agentic_project, validated_cluster_path
+from .settings import (
+    DEFAULT_AGENTIC_PROJECT,
+    validated_agentic_project,
+    validated_cluster_path,
+)
 from .state import RunState
 
 
@@ -60,10 +72,20 @@ def _write_or_print(payload: object, output: str | None) -> None:
     print(destination)
 
 
+def _child_parent_pair(value: str) -> tuple[str, str]:
+    child, separator, parent = value.partition("=")
+    if separator != "=" or not child.strip() or not parent.strip():
+        raise argparse.ArgumentTypeError("expected CHILD_TASK_ID=PARENT_TASK_ID")
+    return child.strip(), parent.strip()
+
+
 def cli(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Dataset-agnostic multimodal NeuroPrep control plane"
     )
+    from . import __version__
+
+    parser.add_argument("--version", action="version", version=f"neuroprep-agentic {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     coverage = subparsers.add_parser("coverage", help="Show dataset and modality plugins")
@@ -82,6 +104,30 @@ def cli(argv: list[str] | None = None) -> None:
     )
     crew.add_argument("--request", default="Review coverage without inventing support.")
 
+    jev = subparsers.add_parser(
+        "jev-decision", help="Run one bounded local OpenJev routing or recovery decision"
+    )
+    jev.add_argument("kind", choices=("route", "boolean", "urgency", "next_action"))
+    jev.add_argument("state", help="JSON file containing a de-identified acquisition/task state")
+    jev.add_argument("--endpoint")
+    jev.add_argument("--model", default="openjev")
+    jev.add_argument("--instructions", default="Is this state safe to continue automatically?")
+
+    subparsers.add_parser(
+        "runtime-check",
+        help="Check Ollama, OpenJev, scientific tools, containers, and runtime assets",
+    )
+
+    interface = subparsers.add_parser(
+        "interface", help="Serve the local browser interface for safe study planning"
+    )
+    interface.add_argument("--host", default="127.0.0.1", choices=("127.0.0.1", "localhost"))
+    interface.add_argument("--port", type=int, default=8787)
+    interface.add_argument(
+        "--agentic-project",
+        help="Exact NeuroPrep-agentic git root recorded in compiled plans",
+    )
+
     hardware = subparsers.add_parser(
         "hardware-profile", help="Record CPU, memory, GPU, CUDA, and container-runtime evidence"
     )
@@ -95,6 +141,40 @@ def cli(argv: list[str] | None = None) -> None:
     request_group.add_argument("--request-file")
     prompt_policy.add_argument("--hardware-profile")
     prompt_policy.add_argument("--output", required=True)
+
+    auto = subparsers.add_parser(
+        "auto",
+        help=(
+            "Fully autonomous run: give a request naming the input and output paths; "
+            "NeuroPrep plans, qualifies backends on a pilot, signs evidence, runs and releases"
+        ),
+    )
+    auto_request = auto.add_mutually_exclusive_group(required=True)
+    auto_request.add_argument("request", nargs="?", help="e.g. 'My data is at X; save to Y'")
+    auto_request.add_argument("--request-file")
+    auto.add_argument("--source-root", help="Override the input path found in the request")
+    auto.add_argument("--output-root", help="Override the output path found in the request")
+    auto.add_argument(
+        "--execute",
+        choices=("local", "slurm", "plan-only"),
+        default="local",
+        help="local: run on this host (e.g. inside a GPU job); slurm: submit workers",
+    )
+    auto.add_argument("--gpu-workers", type=int, default=2)
+    auto.add_argument("--max-pilot-subjects", type=int, default=3)
+    auto.add_argument("--agentic-project")
+    auto.add_argument("--hardware-profile")
+    auto.add_argument(
+        "--signing-key",
+        default=os.getenv("NEUROPREP_BACKEND_EVIDENCE_KEY"),
+        help="Existing evidence key; a run-local 0600 key is created when omitted",
+    )
+    auto.add_argument(
+        "--freesurfer-license",
+        default=os.getenv("FS_LICENSE") or os.getenv("FREESURFER_LICENSE"),
+    )
+    auto.add_argument("--allow-quarantine", action="store_true")
+    auto.add_argument("--allow-unsupported", action="store_true")
 
     prompt_run = subparsers.add_parser(
         "prompt-run",
@@ -132,6 +212,11 @@ def cli(argv: list[str] | None = None) -> None:
     prompt_run.add_argument("--initialize", action="store_true")
     prompt_run.add_argument("--submit", action="store_true")
     prompt_run.add_argument(
+        "--openjev-review",
+        action="store_true",
+        help="Review unresolved acquisitions with local OpenJev before fail-closed validation",
+    )
+    prompt_run.add_argument(
         "--gpu-workers",
         type=int,
         default=2,
@@ -163,7 +248,7 @@ def cli(argv: list[str] | None = None) -> None:
     evidence_builder.add_argument("--target-plan", required=True)
     evidence_builder.add_argument(
         "--git-repository",
-        default="/nfs-stor/salma.hassan/NeuroPrep-agentic",
+        default=os.getenv("NEUROPREP_AGENTIC_PROJECT", DEFAULT_AGENTIC_PROJECT),
     )
     evidence_builder.add_argument("--signing-key", required=True)
     evidence_builder.add_argument("--key-id", required=True)
@@ -270,6 +355,39 @@ def cli(argv: list[str] | None = None) -> None:
     worker.add_argument("--max-tasks", type=int)
     worker.add_argument("--stay-alive", action="store_true")
 
+    recover = subparsers.add_parser(
+        "recover-stale-task",
+        help="Dry-run or compare-and-swap one exact expired task back to pending",
+    )
+    recover.add_argument("--state", required=True)
+    recover.add_argument("--task-id", required=True)
+    recover.add_argument("--expected-worker-id", required=True)
+    recover.add_argument("--expected-attempt", type=int, required=True)
+    recover.add_argument("--expected-lease-expires-at", required=True)
+    recover.add_argument("--finished-at", required=True)
+    recover.add_argument("--reason", required=True)
+    recover.add_argument("--log-path", required=True)
+    recover.add_argument("--return-code", type=int)
+    recover_mode = recover.add_mutually_exclusive_group(required=True)
+    recover_mode.add_argument("--dry-run", action="store_true")
+    recover_mode.add_argument("--apply", action="store_true")
+
+    reconcile = subparsers.add_parser(
+        "reconcile-blocked-children",
+        help="Dry-run or compare-and-swap exact dependency-failed children to pending",
+    )
+    reconcile.add_argument("--state", required=True)
+    reconcile.add_argument(
+        "--child-parent",
+        action="append",
+        type=_child_parent_pair,
+        required=True,
+        metavar="CHILD_TASK_ID=PARENT_TASK_ID",
+    )
+    reconcile_mode = reconcile.add_mutually_exclusive_group(required=True)
+    reconcile_mode.add_argument("--dry-run", action="store_true")
+    reconcile_mode.add_argument("--apply", action="store_true")
+
     status = subparsers.add_parser("run-status", help="Show exact durable task state")
     status.add_argument("--state", required=True)
     status.add_argument("--output")
@@ -283,6 +401,35 @@ def cli(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.command == "coverage":
         _write_or_print(builtin_registry().inventory(), args.output)
+    elif args.command == "interface":
+        from .interface import serve_interface
+
+        try:
+            serve_interface(
+                host=args.host,
+                port=args.port,
+                agentic_project=args.agentic_project,
+            )
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+    elif args.command == "runtime-check":
+        report = runtime_check()
+        _write_or_print(report, None)
+        if not report["ready"]:
+            raise SystemExit(1)
+    elif args.command == "jev-decision":
+        state_path = validated_cluster_path(args.state, must_exist=True)
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(state, dict):
+            parser.error("OpenJev state must be a JSON object")
+        client = OpenJevClient(endpoint=args.endpoint, model=args.model)
+        decision = {
+            "route": lambda: route_acquisition(state, client),
+            "boolean": lambda: check_boolean(state, args.instructions, client),
+            "urgency": lambda: score_urgency(state, client),
+            "next_action": lambda: choose_next_action(state, client),
+        }[args.kind]()
+        _write_or_print(decision.model_dump(mode="json"), None)
     elif args.command == "hardware-profile":
         _write_or_print(detect_hardware_profile().model_dump(mode="json"), args.output)
     elif args.command == "prompt-policy":
@@ -294,6 +441,36 @@ def cli(argv: list[str] | None = None) -> None:
         profile = load_hardware_profile(args.hardware_profile)
         policy = compile_prompt_policy(request, profile)
         _write_or_print(policy.model_dump(mode="json"), args.output)
+    elif args.command == "auto":
+        from .autopilot import AutopilotError, run_autopilot
+
+        if args.request_file:
+            request = validated_cluster_path(args.request_file, must_exist=True).read_text(
+                encoding="utf-8"
+            )
+        else:
+            request = args.request
+        try:
+            report = run_autopilot(
+                request,
+                source_root=args.source_root,
+                output_root=args.output_root,
+                agentic_project=args.agentic_project,
+                hardware_profile=load_hardware_profile(args.hardware_profile),
+                signing_key=args.signing_key,
+                freesurfer_license=args.freesurfer_license,
+                execute=args.execute,
+                gpu_workers=args.gpu_workers,
+                max_pilot_subjects=args.max_pilot_subjects,
+                allow_quarantine=args.allow_quarantine,
+                allow_unsupported=args.allow_unsupported,
+            )
+        except AutopilotError as exc:
+            _write_or_print(exc.report, None)
+            raise SystemExit(f"autopilot stopped at {exc}") from exc
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            parser.error(str(exc))
+        _write_or_print(report, None)
     elif args.command == "prompt-run":
         if args.request_file:
             request_path = validated_cluster_path(args.request_file, must_exist=True)
@@ -320,6 +497,7 @@ def cli(argv: list[str] | None = None) -> None:
                 initialize=args.initialize,
                 submit=args.submit,
                 gpu_workers=args.gpu_workers,
+                openjev_review=args.openjev_review,
             )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             parser.error(str(exc))
@@ -532,6 +710,30 @@ def cli(argv: list[str] | None = None) -> None:
             raise SystemExit(1)
         RunState(plan.layout.state_path).initialize(plan, args.plan)
         _write_or_print(RunState(plan.layout.state_path).summary(), None)
+    elif args.command == "recover-stale-task":
+        result = RunState(args.state).recover_stale_task(
+            args.task_id,
+            expected_worker_id=args.expected_worker_id,
+            expected_attempt=args.expected_attempt,
+            expected_lease_expires_at=args.expected_lease_expires_at,
+            finished_at=args.finished_at,
+            reason=args.reason,
+            log_path=args.log_path,
+            return_code=args.return_code,
+            apply=args.apply,
+        )
+        _write_or_print(result, None)
+    elif args.command == "reconcile-blocked-children":
+        pairs: dict[str, str] = {}
+        for child, parent in args.child_parent:
+            if child in pairs:
+                parser.error(f"duplicate child task id: {child}")
+            pairs[child] = parent
+        result = RunState(args.state).reconcile_blocked_children(
+            pairs,
+            apply=args.apply,
+        )
+        _write_or_print(result, None)
     elif args.command == "worker":
         summary = run_worker(
             args.state,

@@ -10,7 +10,7 @@ from contextlib import suppress
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .backend_evidence import BackendEvidenceBinding
 
@@ -105,7 +105,13 @@ class RunPolicy(BaseModel):
             "tensor_index",
         ]
     )
-    preferred_packages: list[str] = Field(default_factory=list)
+    # The enum reaches the model through the structured-output schema (Ollama format,
+    # OpenAI json_schema, Claude tool input_schema), so constrained decoding cannot emit an
+    # unknown package; the validator below still enforces the allowlist independently.
+    preferred_packages: list[str] = Field(
+        default_factory=list,
+        json_schema_extra={"items": {"type": "string", "enum": sorted(KNOWN_PACKAGES)}},
+    )
     require_gpu_when_supported: bool = True
     allow_experimental_backends: bool = False
     max_subject_walltime_hours: int | None = Field(default=None, ge=1, le=336)
@@ -437,45 +443,124 @@ def plan_backends(
 
 
 def compile_prompt_policy(request: str, hardware: HardwareProfile) -> RunPolicy:
-    """Use the local Ollama-backed CrewAI orchestrator to produce typed intent."""
+    """Use the CrewAI orchestrator to produce typed intent from a natural-language request.
 
-    from crewai import LLM, Agent, Crew, Process, Task
+    The model is any ``provider/model`` supported by :mod:`neuroprep_agentic.llm` (Ollama,
+    OpenAI, Anthropic, OpenRouter, vLLM, LM Studio or another OpenAI-compatible server).
+    Transport is provider-native and schema-constrained; for Ollama this uses the native chat
+    endpoint because its OpenAI-compatible endpoint does not reliably propagate ``think=False``
+    for Qwen3. The result is always re-validated against ``RunPolicy`` before use.
+    """
 
+    from crewai import Agent, Crew, Process, Task
+    from crewai.llms.base_llm import BaseLLM
+
+    from .llm import LLMError, structured_chat
     from .settings import AgenticSettings
 
     settings = AgenticSettings.from_env("coverage")
-    llm = LLM(
-        model=settings.manager_model,
-        base_url=settings.ollama_base_url,
+    endpoint = settings.endpoint(settings.manager_model)
+
+    class _PolicyLLM(BaseLLM):
+        llm_type: str = "neuroprep_policy"
+        provider: str = endpoint.provider
+
+        def call(
+            self,
+            messages: str | list[dict[str, object]],
+            tools: list[dict[str, object]] | None = None,
+            callbacks: list[object] | None = None,
+            available_functions: dict[str, object] | None = None,
+            from_task: object | None = None,
+            from_agent: object | None = None,
+            response_model: type[BaseModel] | None = None,
+        ) -> BaseModel:
+            del callbacks, available_functions, from_task, from_agent
+            if tools:
+                raise ValueError("the policy compiler does not expose model-callable tools")
+            if isinstance(messages, str):
+                chat_messages: list[dict[str, str]] = [{"role": "user", "content": messages}]
+            else:
+                chat_messages = []
+                for message in messages:
+                    role = str(message.get("role", "user"))
+                    content = message.get("content", "")
+                    if not isinstance(content, str):
+                        content = json.dumps(content, sort_keys=True)
+                    chat_messages.append({"role": role, "content": content})
+
+            output_model = response_model or RunPolicy
+            schema = output_model.model_json_schema()
+            # One bounded repair: a rejected reply is shown its own validation error and
+            # asked again. The validator stays authoritative; nothing is coerced or dropped.
+            for attempt in range(2):
+                try:
+                    raw = structured_chat(
+                        endpoint,
+                        chat_messages,
+                        schema,
+                        temperature=float(self.temperature or 0),
+                        seed=int(self.seed or 0),
+                        max_tokens=int(self.max_tokens or 2048),
+                        timeout=float(self.additional_params.get("timeout", 90.0)),
+                    )
+                except LLMError as error:
+                    raise RuntimeError(
+                        f"{endpoint.provider} policy call failed: {error}"
+                    ) from error
+                try:
+                    return output_model.model_validate_json(raw)
+                except ValidationError as error:
+                    if attempt == 1:
+                        raise
+                    chat_messages = [
+                        *chat_messages,
+                        {"role": "assistant", "content": raw},
+                        {
+                            "role": "user",
+                            "content": (
+                                "That object was rejected by the schema validator:\n"
+                                f"{error}\nReturn a corrected object only. Use only the "
+                                "allowed enum values; leave preferred_packages empty if "
+                                "no allowed package was requested."
+                            ),
+                        },
+                    ]
+            raise AssertionError("unreachable")  # pragma: no cover
+
+    llm = _PolicyLLM(
+        model=endpoint.spec,
         temperature=0,
-        timeout=300.0,
-        max_retries=2,
+        seed=0,
+        max_tokens=2048,
+        additional_params={"timeout": 90.0},
     )
     agent = Agent(
         role="Central NeuroPrep Policy Compiler",
-        goal="Translate user scientific intent into the constrained RunPolicy schema.",
+        goal="Immediately translate user scientific intent into the constrained RunPolicy schema.",
         backstory=(
             "You cannot emit shell commands, paths, images, metadata values, modality labels, "
             "or scheduler instructions. You only choose among schema fields and allowlisted "
-            "packages."
+            "packages. Return the policy object only; do not narrate analysis or reasoning."
         ),
         llm=llm,
         function_calling_llm=llm,
         allow_delegation=False,
-        verbose=True,
-        max_iter=3,
+        verbose=False,
+        max_iter=1,
     )
     task = Task(
         description=(
             "Compile this request into RunPolicy: {request}. Hardware evidence: {hardware}. "
             "Process all detected modalities unless the schema says otherwise. Unknown package "
-            "names must not be added. Never invent acquisition metadata or commands."
+            "names must not be added. Never invent acquisition metadata or commands. Return only "
+            "the RunPolicy object with no explanation, markdown or reasoning text."
         ),
         expected_output="A valid RunPolicy object with only the declared fields.",
         agent=agent,
         output_pydantic=RunPolicy,
     )
-    result = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=True).kickoff(
+    result = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False).kickoff(
         inputs={
             "request": request,
             "hardware": json.dumps(hardware.model_dump(mode="json"), sort_keys=True),

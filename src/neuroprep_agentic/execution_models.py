@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from . import paths
 from .backend_evidence import BackendEvidenceBinding
 from .settings import DEFAULT_AGENTIC_PROJECT, validated_cluster_path
 
@@ -76,8 +77,8 @@ class RunLayout(BaseModel):
     work_root: str
     state_path: str
     agentic_project: str = DEFAULT_AGENTIC_PROJECT
-    neuroprep_project: str = "/nfs-stor/salma.hassan/NeuroPrep-multimodal-v4"
-    container_root: str = "/nfs-stor/salma.hassan/NeuroPrep/containers"
+    neuroprep_project: str = Field(default_factory=lambda: str(paths.neuroprep_v4_project()))
+    container_root: str = Field(default_factory=lambda: str(paths.container_root()))
     freesurfer_license: str | None = None
     execute_optional: bool = False
 

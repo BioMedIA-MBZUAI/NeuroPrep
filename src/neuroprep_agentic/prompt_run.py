@@ -21,8 +21,10 @@ from .execution_models import RunLayout
 from .executors import builtin_executor_catalog
 from .images import image_inventory
 from .models import DatasetSpec, SourceRecord
+from .openjev import OpenJevClient, review_acquisitions
 from .policy import (
     HardwareProfile,
+    RunPolicy,
     compile_prompt_policy,
     detect_hardware_profile,
     plan_backends,
@@ -527,6 +529,8 @@ def prepare_prompt_run(
     initialize: bool = False,
     submit: bool = False,
     gpu_workers: int = 2,
+    openjev_review: bool = False,
+    policy: RunPolicy | None = None,
 ) -> dict[str, Any]:
     if not request.strip():
         raise ValueError("prompt request cannot be empty")
@@ -545,7 +549,9 @@ def prepare_prompt_run(
     profile = hardware_profile or detect_hardware_profile()
     hardware_path = output / "hardware.json"
     _write_json(hardware_path, profile)
-    policy = compile_prompt_policy(request, profile)
+    # A caller (the autopilot) may pass an already-compiled policy so that probe, pilot and
+    # production runs share one model decision instead of sampling the model repeatedly.
+    policy = policy or compile_prompt_policy(request, profile)
     policy_path = output / "policy.json"
     _write_json(policy_path, policy)
     if manifest_path:
@@ -577,6 +583,24 @@ def prepare_prompt_run(
     logical_plan_path = output / "logical-plan.json"
     _write_json(graph_path, graph)
     _write_json(logical_plan_path, logical_plan)
+    openjev_path: Path | None = None
+    if openjev_review:
+        unresolved = [
+            item.model_dump(mode="json")
+            for item in (*graph.quarantined, *graph.unsupported)
+        ]
+        review = review_acquisitions(unresolved, OpenJevClient()) if unresolved else []
+        openjev_path = output / "openjev-review.json"
+        _write_json(
+            openjev_path,
+            {
+                "schema_version": "1.0",
+                "advisory_only": True,
+                "reviewed_count": len(review),
+                "decisions": review,
+            },
+        )
+
     if graph.quarantined and not allow_quarantine:
         raise ValueError(
             f"{len(graph.quarantined)} acquisitions are quarantined; review before execution"
@@ -726,6 +750,7 @@ def prepare_prompt_run(
         "backend_evidence": (
             evidence_binding.model_dump(mode="json") if evidence_binding else None
         ),
+        "openjev_review": str(openjev_path) if openjev_path else None,
     }
     _write_json(output / "prompt-run.json", result)
     return result

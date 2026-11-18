@@ -35,8 +35,8 @@ qualification set even after all tests pass.
 
 ## Key lifecycle
 
-Keys are accepted only below `/nfs-stor/salma.hassan/` or
-`/l/users/salma.hassan/`. They must be regular, non-symlink files with mode
+Keys are accepted only below the configured data roots (home, `NEUROPREP_HOME`
+and `NEUROPREP_ALLOWED_ROOTS`). They must be regular, non-symlink files with mode
 `0600`; the key bytes are never serialized into plans, evidence, logs, or CLI
 output.
 
@@ -44,7 +44,7 @@ Create a campaign key in an existing access-controlled directory:
 
 ```bash
 neuroprep-agentic create-backend-evidence-key \
-  --output /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key
+  --output /data/neuroprep/NeuroPrep-production/keys/backend-evidence-20260817.key
 ```
 
 Rotate by creating a new path and `key-id`. Retain the old key while any plan
@@ -58,24 +58,24 @@ First compile a planning-only target in a disposable probe root. Do not use
 
 ```bash
 neuroprep-agentic prompt-run \
-  --request 'My data is at /nfs-stor/salma.hassan/NeuroPrep-production/20260817/sources/anmerge; preprocess it and save to /nfs-stor/salma.hassan/NeuroPrep-production/20260817/runs/anmerge-full-v2-probe' \
-  --manifest /nfs-stor/salma.hassan/NeuroPrep-production/manifests/anmerge-full-v2.json \
+  --request 'My data is at /data/neuroprep/NeuroPrep-production/20260817/sources/anmerge; preprocess it and save to /data/neuroprep/NeuroPrep-production/20260817/runs/anmerge-full-v2-probe' \
+  --manifest /data/neuroprep/NeuroPrep-production/manifests/anmerge-full-v2.json \
   --dataset-id anmerge-full-v2 \
-  --agentic-project /nfs-stor/salma.hassan/NeuroPrep-agentic-production-COMMIT
+  --agentic-project /data/neuroprep/NeuroPrep-agentic-production-COMMIT
 ```
 
 Build the signed intersection from a terminal representative pilot:
 
 ```bash
 neuroprep-agentic build-backend-evidence \
-  --pilot-plan /nfs-stor/salma.hassan/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/execution-plan.json \
-  --pilot-state /nfs-stor/salma.hassan/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/state/tasks.sqlite \
-  --pilot-release /nfs-stor/salma.hassan/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/derivatives/release/release-summary.json \
-  --target-plan /nfs-stor/salma.hassan/NeuroPrep-production/20260817/runs/anmerge-full-v2-probe/execution-plan.json \
-  --git-repository /nfs-stor/salma.hassan/NeuroPrep-agentic-production-COMMIT \
-  --signing-key /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key \
+  --pilot-plan /data/neuroprep/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/execution-plan.json \
+  --pilot-state /data/neuroprep/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/state/tasks.sqlite \
+  --pilot-release /data/neuroprep/NeuroPrep-agentic-benchmarks/20260815/openneuro-case01/derivatives/release/release-summary.json \
+  --target-plan /data/neuroprep/NeuroPrep-production/20260817/runs/anmerge-full-v2-probe/execution-plan.json \
+  --git-repository /data/neuroprep/NeuroPrep-agentic-production-COMMIT \
+  --signing-key /data/neuroprep/NeuroPrep-production/keys/backend-evidence-20260817.key \
   --key-id campaign-20260817 \
-  --output /nfs-stor/salma.hassan/NeuroPrep-production/20260817/evidence/anmerge-full-v2.json
+  --output /data/neuroprep/NeuroPrep-production/20260817/evidence/anmerge-full-v2.json
 ```
 
 Recompile into a new, empty production root and initialize or submit with both
@@ -83,12 +83,12 @@ the document and its key:
 
 ```bash
 neuroprep-agentic prompt-run \
-  --request 'My data is at /nfs-stor/salma.hassan/NeuroPrep-production/20260817/sources/anmerge; preprocess it and save to /nfs-stor/salma.hassan/NeuroPrep-production/20260817/runs/anmerge-full-v2' \
-  --manifest /nfs-stor/salma.hassan/NeuroPrep-production/manifests/anmerge-full-v2.json \
+  --request 'My data is at /data/neuroprep/NeuroPrep-production/20260817/sources/anmerge; preprocess it and save to /data/neuroprep/NeuroPrep-production/20260817/runs/anmerge-full-v2' \
+  --manifest /data/neuroprep/NeuroPrep-production/manifests/anmerge-full-v2.json \
   --dataset-id anmerge-full-v2 \
-  --agentic-project /nfs-stor/salma.hassan/NeuroPrep-agentic-production-COMMIT \
-  --backend-evidence /nfs-stor/salma.hassan/NeuroPrep-production/20260817/evidence/anmerge-full-v2.json \
-  --backend-evidence-key /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key \
+  --agentic-project /data/neuroprep/NeuroPrep-agentic-production-COMMIT \
+  --backend-evidence /data/neuroprep/NeuroPrep-production/20260817/evidence/anmerge-full-v2.json \
+  --backend-evidence-key /data/neuroprep/NeuroPrep-production/keys/backend-evidence-20260817.key \
   --initialize
 ```
 
@@ -96,8 +96,8 @@ When initialization is invoked separately, `run-init` reopens and verifies the
 signed source rather than trusting the embedded plan label:
 
 ```bash
-neuroprep-agentic run-init /nfs-stor/salma.hassan/run/execution-plan.json \
-  --backend-evidence-key /nfs-stor/salma.hassan/NeuroPrep-production/keys/backend-evidence-20260817.key
+neuroprep-agentic run-init /data/neuroprep/run/execution-plan.json \
+  --backend-evidence-key /data/neuroprep/NeuroPrep-production/keys/backend-evidence-20260817.key
 ```
 
 For `prompt-run --submit`, an explicit `--backend-evidence-key` overrides an
@@ -109,7 +109,7 @@ path reaches the launcher.
 
 No evidence is required when the deterministic backend planner produces zero
 target smoke tests. `--agentic-project` takes precedence over
-`NEUROPREP_AGENTIC_PROJECT`, which in turn takes precedence over the historical
-`/nfs-stor/salma.hassan/NeuroPrep-agentic` default. The selected path must
+`NEUROPREP_AGENTIC_PROJECT`, which in turn takes precedence over the default (the running source
+checkout, else `$NEUROPREP_HOME/NeuroPrep-agentic`). The selected path must
 resolve to the exact top level of an existing git repository. Evidence built
 for one path or commit cannot initialize a plan using another.

@@ -1,15 +1,29 @@
 [project]
 name = "neuroprep-agentic"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Dataset-agnostic agentic control plane for multimodal neurodata ingestion and preprocessing"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "CITATION.cff"]
+authors = [{ name = "Salma Hassan" }]
+keywords = ["neuroimaging", "BIDS", "workflow", "agentic", "LLM", "preprocessing", "MRI", "PET", "EEG"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = [
-  "crewai[litellm]==1.15.13",
+  "crewai[litellm,anthropic]==1.15.13",
   "pydantic>=2.11,<3",
   "python-dotenv>=1.1,<2",
   "mne>=1.9,<2",
-  "mne-nirs>=0.7,<1",
+  "h5py>=3.10,<4",  # SNIRF (fNIRS) reading via mne.io.read_raw_snirf
   "nibabel>=5.3,<6",
   "pandas>=2.2,<3",
   "scipy>=1.14,<2",
@@ -34,8 +48,30 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/neuroprep_agentic/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neuroprep_agentic"]
+
+[tool.hatch.build.targets.sdist]
+# Ship code, tests and docs only: never evidence, state, logs or cluster output.
+include = [
+  "src/neuroprep_agentic",
+  "tests",
+  "examples/*.json",
+  "examples/*.txt",
+  "README.md",
+  "CHANGELOG.md",
+  "pyproject.toml",
+  "LICENSE",
+  "CITATION.cff",
+]
+# Site launchers (scripts/) and the paper's prompt records (examples/requests/) stay in git.
+exclude = ["**/__pycache__", "**/*.py[cod]", "tests/test_launchers.py"]
 
 [tool.crewai]
 type = "flow"

@@ -6,7 +6,14 @@ from pathlib import Path
 from crewai_core import settings as _crewai_settings
 from crewai_core.token_manager import TokenManager as _CrewAITokenManager
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_SOURCE_ROOT = Path(__file__).resolve().parents[2]
+# In a source checkout keep state beside the repository. In an installed package
+# parents[2] is the environment's lib/ directory, which must never receive state or output.
+_PROJECT_ROOT = (
+    _SOURCE_ROOT
+    if (_SOURCE_ROOT / "pyproject.toml").is_file()
+    else Path(os.environ.get("NEUROPREP_HOME", Path.home() / ".neuroprep")).resolve()
+)
 _STATE_ROOT = Path(
     os.environ.get("NEUROPREP_AGENTIC_STATE_ROOT", _PROJECT_ROOT / "state")
 ).resolve()
@@ -20,6 +27,10 @@ os.environ.setdefault("XDG_CONFIG_HOME", str(_STATE_ROOT / "xdg-config"))
 os.environ.setdefault("XDG_CACHE_HOME", str(_STATE_ROOT / "xdg-cache"))
 os.environ.setdefault("XDG_DATA_HOME", str(_STATE_ROOT / "xdg-data"))
 os.environ.setdefault("XDG_STATE_HOME", str(_STATE_ROOT / "xdg-state"))
+# Research data stays local by default: CrewAI's anonymous usage telemetry and OpenTelemetry
+# export are off unless the user explicitly sets these variables.
+os.environ.setdefault("CREWAI_TELEMETRY_OPT_OUT", "true")
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 # CrewAI 1.15.13 hard-codes two locations below Path.home() and ignores XDG
 # variables for them. Redirect those pinned APIs before importing CrewAI itself.
@@ -38,4 +49,4 @@ _CrewAITokenManager._get_secure_storage_path = staticmethod(_crewai_secure_stora
 from .registry import PluginRegistry, builtin_registry  # noqa: E402
 
 __all__ = ["PluginRegistry", "builtin_registry"]
-__version__ = "0.3.0"
+__version__ = "0.5.0"

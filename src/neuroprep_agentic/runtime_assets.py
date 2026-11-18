@@ -8,15 +8,16 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import paths
 from .execution_models import ExecutionPlan
 from .settings import validated_cluster_path
 
 NEXTFLOW_VERSION = "24.10.3"
 NEXTFLOW_SIZE = 34_362_800
 NEXTFLOW_SHA256 = "835f5a178ac7c5c4fc12a3407aa381c05d8b3f5750c8c3292a5389c12721d12a"
-NEXTFLOW_SEED = Path(
-    "/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/nextflow/framework/24.10.3/"
-    "nextflow-24.10.3-one.jar"
+NEXTFLOW_SEED = (
+    paths.tools_root() / "nextflow/framework" / NEXTFLOW_VERSION
+    / f"nextflow-{NEXTFLOW_VERSION}-one.jar"
 )
 
 ASLPREP_PATCH_VERSION = "26.0.3-neuroprep-2"
@@ -28,10 +29,9 @@ ASLPREP_TEMPLATEFLOW_TRANSFORM_SHA256 = (
 ASLPREP_TEMPLATEFLOW_TRANSFORM_NAME = (
     "tpl-MNI152NLin2009cAsym_from-MNI152NLin6Asym_mode-image_xfm.h5"
 )
-ASLPREP_TEMPLATEFLOW_TRANSFORM_SEED = Path(
-    "/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/templateflow/"
-    "tpl-MNI152NLin2009cAsym/"
-    + ASLPREP_TEMPLATEFLOW_TRANSFORM_NAME
+ASLPREP_TEMPLATEFLOW_TRANSFORM_SEED = (
+    paths.tools_root() / "templateflow/tpl-MNI152NLin2009cAsym"
+    / ASLPREP_TEMPLATEFLOW_TRANSFORM_NAME
 )
 ASLPREP_PATCHES: dict[str, tuple[str, tuple[tuple[str, str], ...], str]] = {
     "cbf.py": (

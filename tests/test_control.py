@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from crewai.project import load_crew
 
+import neuroprep_agentic.crews.control.crew as crew_module
 from neuroprep_agentic.control import (
     NeuroPrepControlFlow,
     authoritative_evidence,
@@ -50,7 +51,8 @@ def test_control_payload_rejects_tampered_evidence():
 
 
 def test_every_control_crew_configuration_loads():
-    config_root = Path(__file__).parents[1] / "src" / "neuroprep_agentic" / "crews" / "control"
+    # Load from the imported package so the test also covers an installed wheel.
+    config_root = Path(crew_module.__file__).parent
     for config_name in CREW_CONFIGS.values():
         crew, _defaults = load_crew(config_root / config_name)
         assert crew.agents

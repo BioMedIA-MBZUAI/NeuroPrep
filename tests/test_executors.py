@@ -51,7 +51,7 @@ def test_qsiprep_preserves_proven_gradient_and_geometry_safeguards() -> None:
     assert "--skip-anat-based-spatial-normalization" not in definition.command
     assert "--separate-all-dwis" in definition.command
     assert "--derivatives" not in definition.command
-    assert "{agentic_project}/src/neuroprep_agentic/resources/eddy_cuda10.2" in command
+    assert "{agentic_resources}/eddy_cuda10.2" in command
     assert definition.environment["LD_LIBRARY_PATH"].startswith("/lib/x86_64-linux-gnu")
 
 

@@ -9,7 +9,7 @@
   "records": [
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/T1_MPRAGE.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/T1_MPRAGE.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T09:00:00Z",
@@ -18,7 +18,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/FLAIR.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/FLAIR.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T09:10:00Z",
@@ -27,7 +27,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/DWI.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/DWI.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T09:20:00Z",
@@ -36,7 +36,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/rest_bold.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/rest_bold.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T09:40:00Z",
@@ -45,7 +45,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/amyloid_pet.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/amyloid_pet.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T11:00:00Z",
@@ -54,7 +54,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/noncontrast_ct.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/noncontrast_ct.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T12:00:00Z",
@@ -63,7 +63,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V1/resting_eeg.edf",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V1/resting_eeg.edf",
       "source_subject_id": "P001",
       "source_session_id": "V1",
       "acquisition_time": "2026-01-01T13:00:00Z",
@@ -72,7 +72,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V2/T1_MPRAGE.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V2/T1_MPRAGE.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V2",
       "acquisition_time": "2027-01-01T09:00:00Z",
@@ -81,7 +81,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P001/V2/localizer.dcm",
+      "source_path": "/data/neuroprep/synthetic-input/P001/V2/localizer.dcm",
       "source_subject_id": "P001",
       "source_session_id": "V2",
       "acquisition_time": "2027-01-01T08:55:00Z",
@@ -90,7 +90,7 @@
     },
     {
       "dataset_id": "synthetic-demo",
-      "source_path": "/nfs-stor/salma.hassan/synthetic-input/P002/V1/vendor_unknown.bin",
+      "source_path": "/data/neuroprep/synthetic-input/P002/V1/vendor_unknown.bin",
       "source_subject_id": "P002",
       "source_session_id": "V1",
       "acquisition_time": "2026-02-01T09:00:00Z",

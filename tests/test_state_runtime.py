@@ -64,6 +64,7 @@ def _bids_only_plan(root: Path):
         work_root=str(root / "work"),
         state_path=str(root / "state" / "tasks.sqlite"),
         freesurfer_license=str(root / "license.txt"),
+        agentic_project=str(Path(__file__).resolve().parents[1]),
     )
     plan = compile_execution_plan(
         graph,

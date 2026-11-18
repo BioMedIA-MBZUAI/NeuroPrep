@@ -13,6 +13,7 @@
 set -euo pipefail
 
 APP_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic
+. "$APP_ROOT/scripts/ciai_env.sh"
 CACHE_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic-cache
 STATE_ROOT=${APP_ROOT}/state
 RUNTIME_ROOT=/nfs-stor/salma.hassan/NeuroPrep-agentic-runtime/slurm-${SLURM_JOB_ID}

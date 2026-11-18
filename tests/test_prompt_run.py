@@ -47,7 +47,7 @@ def test_prompt_paths_reject_unapproved_or_overlapping_roots(nfs_tmp: Path) -> N
     source.mkdir()
 
     with pytest.raises(ValueError, match="Path must be under one of"):
-        resolve_prompt_paths(f"My data is at {source}", output_root="/home/salma.hassan/results")
+        resolve_prompt_paths(f"My data is at {source}", output_root="/tmp/neuroprep-results")
     with pytest.raises(ValueError, match="must not overlap"):
         resolve_prompt_paths(f"My data is at {source} and save to {source / 'results'}")
 

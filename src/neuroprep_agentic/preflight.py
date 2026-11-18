@@ -4,6 +4,7 @@ import os
 import shutil
 from pathlib import Path
 
+from . import paths
 from .execution_models import ExecutionPlan, PreflightCheck, PreflightReport
 from .executors import ExecutorCatalog
 from .runtime_assets import runtime_asset_inventory
@@ -83,9 +84,7 @@ def preflight_execution_plan(
             missing_runtime_assets.add(str(item["path"]))
 
     if any(task.executor_id == "qsiprep" for task in plan.tasks):
-        agentic_resources = (
-            Path(plan.layout.agentic_project) / "src/neuroprep_agentic/resources"
-        )
+        agentic_resources = paths.package_resources()
         resources = Path(plan.layout.neuroprep_project) / "src/neuroprep/resources"
         resource_requirements = (
             (agentic_resources / "eddy_cuda10.2", True),
@@ -101,15 +100,12 @@ def preflight_execution_plan(
                 missing_runtime_assets.add(str(path))
 
     if any(task.executor_id == "petprep" for task in plan.tasks):
-        sitecustomize = (
-            Path(plan.layout.agentic_project)
-            / "src/neuroprep_agentic/resources/petprep_sitecustomize.py"
-        )
+        sitecustomize = paths.package_resources() / "petprep_sitecustomize.py"
         if not sitecustomize.is_file() or sitecustomize.stat().st_size == 0:
             missing_runtime_assets.add(str(sitecustomize))
 
     if any(task.executor_id == "fsl-mrs" for task in plan.tasks):
-        fsl_mrs_root = Path("/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/fsl-mrs-2.4.17")
+        fsl_mrs_root = paths.fsl_mrs_root()
         for name in ("fsl_mrs", "fsl_mrs_preproc", "spec2nii"):
             executable = fsl_mrs_root / "bin" / name
             if not executable.is_file() or not os.access(executable, os.X_OK):
@@ -128,9 +124,7 @@ def preflight_execution_plan(
         for task in bids_stage_tasks
     )
     if needs_dcm2niix:
-        dcm2niix = Path(
-            "/nfs-stor/salma.hassan/NeuroPrep-agentic-tools/dcm2niix-v1.0.20260416/dcm2niix"
-        )
+        dcm2niix = paths.dcm2niix_path()
         if not dcm2niix.is_file() or not os.access(dcm2niix, os.X_OK):
             missing_executables.add(str(dcm2niix))
 

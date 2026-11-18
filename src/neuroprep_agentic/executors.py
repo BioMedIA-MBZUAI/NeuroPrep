@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import Iterable
 
+from . import __version__
 from .execution_models import (
     ArtifactRequirement,
     ExecutionScope,
@@ -58,7 +59,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
     definitions: list[ExecutorDefinition] = [
         native(
             "neuroprep-bids-stage",
-            "0.3.0",
+            __version__,
             ExecutionScope.ACQUISITION,
             ("core.bids",),
             ("bids_stage",),
@@ -67,7 +68,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
         ),
         native(
             "neuroprep-bids-init",
-            "0.3.0",
+            __version__,
             ExecutionScope.DATASET,
             ("core.bids",),
             ("bids_init",),
@@ -507,7 +508,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "{neuroprep_project}/src/neuroprep/resources:/neuroprep-resources:ro",
                 "--bind",
                 (
-                    "{agentic_project}/src/neuroprep_agentic/resources/eddy_cuda10.2:"
+                    "{agentic_resources}/eddy_cuda10.2:"
                     "/app/.pixi/envs/qsiprep/bin/eddy_cuda10.2:ro"
                 ),
                 "--bind",
@@ -704,13 +705,13 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "{freesurfer_license}:/fs_license.txt:ro",
                 "--bind",
                 (
-                    "{agentic_project}/src/neuroprep_agentic/resources/"
+                    "{agentic_resources}/"
                     "petprep_sitecustomize.py:/opt/conda/envs/petprep/lib/python3.12/"
                     "site-packages/sitecustomize.py:ro"
                 ),
                 "--bind",
                 (
-                    "{agentic_project}/src/neuroprep_agentic/resources/"
+                    "{agentic_resources}/"
                     "petprep_nfs_linear.yaml:/petprep-nfs-linear.yaml:ro"
                 ),
                 "{image}",
@@ -897,7 +898,7 @@ def _native_and_sensor_definitions(v4: str) -> list[ExecutorDefinition]:
         result.append(
             native(
                 executor_id,
-                "0.3.0",
+                __version__,
                 scope,
                 plugin_ids,
                 stages,
