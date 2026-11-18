@@ -293,6 +293,49 @@ def _dataset_control_task(
     return ExecutableTask.model_validate(payload)
 
 
+def _bind_consumers(
+    grouped: dict[tuple[str, ...], list[TaskSpec]],
+    definitions: dict[tuple[str, ...], ExecutorDefinition],
+    warnings: list[str],
+) -> dict[tuple[str, ...], tuple[str, ExecutorDefinition]]:
+    """Give each consumer task the planned backend that provides its interface.
+
+    No provider: an optional consumer is dropped with a warning; a required one is an error
+    (selection only routes away from a provider when the alternative takes over the
+    consumer's required stages, e.g. MRtrix3 fitting tensors itself instead of QSIRecon).
+    """
+    providers: dict[tuple[str | None, str], list[ExecutorDefinition]] = defaultdict(list)
+    for key, definition in definitions.items():
+        for interface in definition.provides:
+            providers[(grouped[key][0].subject_id, interface)].append(definition)
+    bound: dict[tuple[str, ...], tuple[str, ExecutorDefinition]] = {}
+    for key in [key for key, definition in definitions.items() if definition.consumes]:
+        definition, members = definitions[key], grouped[key]
+        if len(definition.consumes) != 1:
+            raise ValueError(f"{definition.executor_id} must consume exactly one interface")
+        interface = definition.consumes[0]
+        found = providers.get((members[0].subject_id, interface), [])
+        if not found:
+            if any(member.required for member in members):
+                raise ValueError(
+                    f"executor {definition.executor_id} for {members[0].subject_id} needs a "
+                    f"planned backend that provides {interface}"
+                )
+            warnings.append(
+                f"dropped optional {definition.executor_id} for {members[0].subject_id}: "
+                f"no selected backend provides {interface}"
+            )
+            del grouped[key], definitions[key]
+            continue
+        if len(found) > 1:
+            # shortcut: no catalog interface has two providers yet; when one does, run one
+            # consumer per provider in the pilot so compatibility is qualified too.
+            names = ", ".join(item.executor_id for item in found)
+            raise ValueError(f"{interface} has several providers ({names}); not supported yet")
+        bound[key] = (interface, found[0])
+    return bound
+
+
 def compile_execution_plan(
     graph: CanonicalAcquisitionGraph,
     logical_plan: PlanResult,
@@ -425,22 +468,22 @@ def compile_execution_plan(
     candidate_keys: set[tuple[str, ...]] = set()
     committed_keys: set[tuple[str, ...]] = set()  # also does non-compared (required) work
     for task in logical_plan.tasks:
+        routed = catalog.resolve(task.plugin_id, task.stage, selected)
         compared = [
             item
             for item in catalog.alternatives(task.plugin_id, task.stage)
             if item.executor_id in qualification_candidates
         ]
-        chosen = (
-            compared
-            if len(compared) > 1
-            else [catalog.resolve(task.plugin_id, task.stage, selected)]
-        )
+        chosen = list({item.executor_id: item for item in (routed, *compared)}.values())
         for definition in chosen:
             key = _scope_key(definition, task)
             grouped[key].append(task)
             definitions[key] = definition
-            (candidate_keys if len(compared) > 1 else committed_keys).add(key)
+            is_candidate = len(chosen) > 1 and definition in compared
+            (candidate_keys if is_candidate else committed_keys).add(key)
     candidate_keys -= committed_keys
+    warnings: list[str] = []
+    consumed_from = _bind_consumers(grouped, definitions, warnings)
 
     pending_dependency_ids: dict[str, set[str]] = {}
     for key, members in grouped.items():
@@ -533,6 +576,10 @@ def compile_execution_plan(
                 }
             )
         values = _format_values(layout, definition, placeholder, context_path)
+        if key in consumed_from:
+            interface, provider = consumed_from[key]
+            values[interface] = provider.provides[interface].format(**values)
+            placeholder.metadata["consumes_from"] = provider.executor_id
         payload = placeholder.model_dump(mode="json")
         rendered_command = _format_argv(definition.command, values)
         if definition.executor_id == "qsiprep":
@@ -577,6 +624,9 @@ def compile_execution_plan(
     for task_id, task in list(by_id.items()):
         definition = catalog.by_id(task.executor_id)
         dependencies = set(task.depends_on)
+        provider_id = task.metadata.get("consumes_from")
+        if provider_id:
+            dependencies.update(by_subject_executor.get((task.subject_id, provider_id), []))
         for required_executor_id in definition.requires_executor_ids:
             if task.subject_id is None:
                 raise ValueError(
@@ -625,6 +675,7 @@ def compile_execution_plan(
         backend_qualification_tests=backend_qualification_tests or [],
         planned_smoke_tests=relevant_smoke_tests,
         backend_evidence=backend_evidence,
+        warnings=warnings,
     )
 
 

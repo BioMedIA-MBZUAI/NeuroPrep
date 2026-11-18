@@ -33,6 +33,14 @@
 - SynthSeg (`freesurfer/freesurfer:7.4.1`, `mri_synthseg --parc --robust`), FSL BASIL
   (`vnmd/fsl_6.0.7.18`, BIDS-ASL metadata mapped to `oxford_asl` flags) and
   TotalSegmentator 2.18.0 (free `total` task) as alternative backends.
+- Derivative interfaces: executors declare what they `provide` and `consume`; XCP-D
+  and QSIRecon read their input from whichever planned backend provides it instead of
+  a hard-coded fMRIPrep/QSIPrep path. Selection rejects an alternative that would leave
+  a planned consumer without input unless it takes over the consumer's mandatory
+  stages; optional consumers without a provider are dropped with a plan warning.
+- MRtrix3 3.0.8 (`mrtrix3/mrtrix3:3.0.8`) as an alternative to QSIPrep: denoise,
+  Gibbs removal, `dwifslpreproc` (topup with an opposite-phase b0 series when present),
+  bias correction, mask and tensor fit.
 - Capability contracts: a backend competes only if it declares every output its
   capability requires; `fast`/`low_memory` requests accept volumetric segmentation.
 - Backend capabilities activate by plan stage, not only by executor, and an executor

@@ -326,7 +326,7 @@ def test_every_executor_compiles_in_one_dataset_agnostic_dag(nfs_tmp: Path) -> N
         catalog,
         qualification_candidates={
             "deepprep", "fastsurfer", "synthseg", "aslprep", "basil",
-            "neuroprep-spatial", "totalsegmentator",
+            "neuroprep-spatial", "totalsegmentator", "qsiprep", "mrtrix3",
         },
     )
     assert {task.executor_id for task in compared.tasks} == {
@@ -405,3 +405,32 @@ def test_prefetch_covers_backends_a_pilot_will_compare(nfs_tmp: Path) -> None:
     )
     specs = required_images(plan, builtin_executor_catalog())
     assert "fastsurfer" in {spec.executor_id for spec in specs}
+
+
+def test_selected_mrtrix3_takes_over_the_tensor_fit(nfs_tmp: Path) -> None:
+    graph, logical = build_graph_and_plan(_manifest(nfs_tmp), "compiler-test-identity-key")
+    layout = RunLayout(
+        dataset_id="compiler-test",
+        source_root=str(nfs_tmp / "source"),
+        bids_root=str(nfs_tmp / "bids"),
+        derivatives_root=str(nfs_tmp / "derivatives"),
+        work_root=str(nfs_tmp / "work"),
+        state_path=str(nfs_tmp / "state" / "tasks.sqlite"),
+        freesurfer_license=str(nfs_tmp / "license.txt"),
+    )
+    catalog = builtin_executor_catalog()
+    default = compile_execution_plan(graph, logical, layout, catalog)
+    xcpd = next(t for t in default.tasks if t.executor_id == "xcp-d")
+    assert xcpd.metadata["consumes_from"] == "fmriprep" and "/out/fmriprep" in xcpd.command
+    fmriprep = next(t for t in default.tasks if t.executor_id == "fmriprep")
+    assert fmriprep.task_id in xcpd.depends_on
+
+    decisions = [
+        {"capability": "dwi_preprocess", "selected_executor_id": "mrtrix3"},
+        {"capability": "diffusion_model", "selected_executor_id": "qsirecon"},
+    ]
+    routed = compile_execution_plan(graph, logical, layout, catalog, backend_decisions=decisions)
+    mrtrix3 = next(t for t in routed.tasks if t.executor_id == "mrtrix3")
+    assert set(mrtrix3.stages) == {"dwi_preprocess", "dti_fit"} and mrtrix3.required
+    assert not {"qsiprep", "qsirecon"} & {t.executor_id for t in routed.tasks}
+    assert any("dropped optional qsirecon" in warning for warning in routed.warnings)

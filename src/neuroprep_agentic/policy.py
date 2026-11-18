@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from contextlib import suppress
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -342,7 +342,7 @@ def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
         candidate("bold_preprocess", "deepprep", gpu=1),
         integrated("bold_postprocess", "xcp-d", "xcp-d"),
         integrated("dwi_preprocess", "qsiprep", "qsiprep", gpu=1, gpu_memory=8),
-        candidate("dwi_preprocess", "mrtrix3"),
+        integrated("dwi_preprocess", "mrtrix3", "mrtrix3"),
         candidate("dwi_preprocess", "fsl", gpu=1),
         integrated("diffusion_model", "qsirecon", "qsirecon", gpu=1, gpu_memory=8),
         candidate("diffusion_model", "mrtrix3"),
@@ -367,6 +367,35 @@ def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
     )
 
 
+def _unserved_consumer(
+    item: BackendCandidate,
+    group: list[BackendCandidate],
+    consumers: list[Any],
+    known: dict[str, Any],
+    mandatory_stages: set[str] | frozenset[str] | None,
+) -> str | None:
+    """Why ``item`` would leave a planned consumer without its input, if it would."""
+    definition = known.get(str(item.executor_id))
+    if definition is None:
+        return None
+    produced = {
+        interface
+        for other in group
+        if str(other.executor_id) in known
+        for interface in known[str(other.executor_id)].provides
+    }
+    for consumer in consumers:
+        interface = consumer.consumes[0]
+        if interface not in produced or interface in definition.provides:
+            continue
+        needed = set(consumer.stages)
+        if mandatory_stages is not None:
+            needed &= set(mandatory_stages)
+        if not needed <= set(definition.stages):
+            return f"{consumer.executor_id}_needs_{interface}"
+    return None
+
+
 def plan_backends(
     policy: RunPolicy,
     hardware: HardwareProfile,
@@ -376,13 +405,17 @@ def plan_backends(
     backend_evidence: BackendEvidenceBinding | None = None,
     runtimes: dict[str, float] | None = None,
     required_stages: set[str] | frozenset[str] | None = None,
+    mandatory_stages: set[str] | frozenset[str] | None = None,
 ) -> BackendPlan:
     """Choose one backend per capability.
 
     Among integrated, hardware-compatible candidates: a failed smoke test rejects; then
     prompt preference, objective match and passed evidence score; equal scores go to the
     shortest measured pilot runtime (``runtimes`` by smoke test id), then the package id.
-    A capability whose backend another planned executor requires is pinned to it.
+    A capability whose backend another planned executor requires is pinned to it. A
+    backend that does not provide an interface a planned consumer reads (e.g. XCP-D reads
+    fMRIPrep-layout BOLD) is rejected unless it takes over that consumer's mandatory
+    stages itself (``mandatory_stages``: stages of required plan tasks).
     """
     from .executors import builtin_executor_catalog
 
@@ -390,6 +423,12 @@ def plan_backends(
     measured = runtimes or {}
     portfolio = builtin_backend_portfolio()
     catalog = builtin_executor_catalog()
+    known = {definition.executor_id: definition for definition in catalog.definitions}
+    consumers = [
+        known[executor_id]
+        for executor_id in sorted(required_executor_ids or ())
+        if executor_id in known and known[executor_id].consumes
+    ]
     pinned_by: dict[str, str] = {}
     for executor_id in sorted(required_executor_ids or ()):
         for required in catalog.by_id(executor_id).requires_executor_ids:
@@ -423,6 +462,12 @@ def plan_backends(
                 continue
             if pinned is not None and item.executor_id != pinned:
                 rejected[item.package_id] = f"{pinned_by[pinned]}_requires_{pinned}"
+                continue
+            incompatible = _unserved_consumer(
+                item, grouped[capability], consumers, known, mandatory_stages
+            )
+            if incompatible:
+                rejected[item.package_id] = incompatible
                 continue
             declared = {
                 requirement.kind

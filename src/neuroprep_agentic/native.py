@@ -1356,6 +1356,115 @@ def _basil(task: ExecutableTask, output: Path, image: Path) -> dict[str, Any]:
     return {"oxford_asl_flags": flags, "cbf_map": str(cbf), "m0_volumes": len(m0)}
 
 
+def _opposite(direction: str | None) -> str | None:
+    if not direction:
+        return None
+    return direction[:-1] if direction.endswith("-") else direction + "-"
+
+
+def mrtrix3_dwi_commands(
+    series: list[dict[str, Any]], output: Path, prefix: str, threads: int
+) -> list[list[str]]:
+    """MRtrix3 3.0.8 preprocessing + tensor fit for one subject's BIDS DWI series.
+
+    ``series`` items: ``nifti``, ``bval``, ``bvec``, ``json`` paths, ``bvals`` (floats) and
+    ``pe`` (PhaseEncodingDirection). The series with most diffusion-weighted volumes is the
+    main one; a b0-only series with the opposite phase encoding enables topup (-rpe_header
+    with an SE-EPI pair). Every intermediate is a file, so no shell pipes are needed.
+    """
+    weighted = [item for item in series if any(value >= 50 for value in item["bvals"])]
+    if not weighted:
+        raise ValueError("no diffusion-weighted series (all b-values < 50)")
+    main = max(weighted, key=lambda item: sum(value >= 50 for value in item["bvals"]))
+    if not main.get("pe"):
+        raise ValueError("main DWI series lacks PhaseEncodingDirection for dwifslpreproc")
+    reverse = next(
+        (
+            item
+            for item in series
+            if item is not main
+            and all(value < 50 for value in item["bvals"])
+            and item.get("pe") == _opposite(main["pe"])
+        ),
+        None,
+    )
+    o = lambda name: str(output / name)  # noqa: E731
+    n = ["-nthreads", str(threads), "-force"]
+    steps = [
+        ["mrconvert", str(main["nifti"]), o("dwi.mif"), "-fslgrad", str(main["bvec"]),
+         str(main["bval"]), "-json_import", str(main["json"]), *n],
+        ["dwidenoise", o("dwi.mif"), o("denoised.mif"), "-noise", o("noise.mif"), *n],
+        ["mrdegibbs", o("denoised.mif"), o("degibbs.mif"), *n],
+    ]
+    preproc = ["dwifslpreproc", o("degibbs.mif"), o("preproc.mif"), "-rpe_header"]
+    if reverse is not None:
+        count = len(reverse["bvals"])
+        steps += [
+            ["mrconvert", str(reverse["nifti"]), o("b0_reverse.mif"), "-json_import",
+             str(reverse["json"]), *n],
+            ["dwiextract", o("degibbs.mif"), o("b0_main.mif"), "-bzero", *n],
+            ["mrconvert", o("b0_main.mif"), o("b0_main_first.mif"), "-coord", "3",
+             f"0:{count - 1}", *n],
+            ["mrcat", o("b0_main_first.mif"), o("b0_reverse.mif"), o("b0_pair.mif"),
+             "-axis", "3", *n],
+        ]
+        preproc += ["-se_epi", o("b0_pair.mif"), "-align_seepi"]
+    steps += [
+        [*preproc, "-scratch", o("scratch"), "-eddyqc_text", o("eddyqc"), *n],
+        ["dwibiascorrect", "ants", o("preproc.mif"), o("unbiased.mif"), "-bias",
+         o("bias.mif"), *n],
+        ["dwi2mask", o("unbiased.mif"), o("mask.mif"), *n],
+        ["mrconvert", o("unbiased.mif"), o(f"{prefix}_desc-preproc_dwi.nii.gz"),
+         "-export_grad_fsl", o(f"{prefix}_desc-preproc_dwi.bvec"),
+         o(f"{prefix}_desc-preproc_dwi.bval"), "-json_export",
+         o(f"{prefix}_desc-preproc_dwi.json"), *n],
+        ["mrconvert", o("mask.mif"), o(f"{prefix}_desc-brain_mask.nii.gz"), "-datatype",
+         "uint8", *n],
+        ["dwi2tensor", o("unbiased.mif"), o("tensor.mif"), "-mask", o("mask.mif"), *n],
+        ["tensor2metric", o("tensor.mif"), "-mask", o("mask.mif"),
+         "-fa", o(f"{prefix}_model-tensor_param-fa_dwimap.nii.gz"),
+         "-adc", o(f"{prefix}_model-tensor_param-md_dwimap.nii.gz"), *n],
+    ]
+    return steps
+
+
+def _mrtrix3_dwi(task: ExecutableTask, output: Path, image: Path) -> dict[str, Any]:
+    series = []
+    for nifti in _bids_inputs(task):
+        if not nifti.name.endswith("_dwi.nii.gz"):
+            continue
+        stem = nifti.name[: -len(".nii.gz")]
+        bval, bvec, sidecar = (nifti.with_name(stem + ext) for ext in (".bval", ".bvec", ".json"))
+        metadata = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else {}
+        series.append(
+            {
+                "nifti": nifti,
+                "bval": bval,
+                "bvec": bvec,
+                "json": sidecar,
+                "bvals": [float(value) for value in bval.read_text().split()],
+                "pe": metadata.get("PhaseEncodingDirection"),
+            }
+        )
+    output.mkdir(parents=True, exist_ok=True)
+    prefix = f"sub-{(task.subject_id or 'dataset').removeprefix('sub-')}"
+    binds = [
+        item
+        for root in sorted(set(_settings.ALLOWED_ROOTS), key=str)
+        if root.is_dir()
+        for item in ("--bind", f"{root}:{root}")
+    ]
+    container = [
+        str(paths.container_runtime()), "exec", "--cleanenv", "--containall", *binds, str(image)
+    ]
+    commands = mrtrix3_dwi_commands(series, output, prefix, task.cpus)
+    for command in commands:
+        completed = subprocess.run([*container, *command], check=False)
+        if completed.returncode != 0:
+            raise RuntimeError(f"MRtrix3 step failed ({completed.returncode}): {command[0]}")
+    return {"steps": [command[0] for command in commands], "series": len(series)}
+
+
 def run_native(task: ExecutableTask, kind: str, image: str | None = None) -> dict[str, Any]:
     if kind == "bids-init":
         return _bids_init(task)
@@ -1388,10 +1497,11 @@ def run_native(task: ExecutableTask, kind: str, image: str | None = None) -> dic
         result = _ants_registration(task, output, False)
     elif kind == "longitudinal-template":
         result = _ants_registration(task, output, True)
-    elif kind == "basil":
+    elif kind in {"basil", "mrtrix3-dwi"}:
         if not image:
-            raise ValueError("basil requires --image")
-        result = _basil(task, output, validated_cluster_path(image, must_exist=True))
+            raise ValueError(f"{kind} requires --image")
+        handler = _basil if kind == "basil" else _mrtrix3_dwi
+        result = handler(task, output, validated_cluster_path(image, must_exist=True))
     else:
         result = _copy_modality(task, output, kind)
     report = output / f"{_safe_filename(task.task_id)}_{kind}_qc.json"

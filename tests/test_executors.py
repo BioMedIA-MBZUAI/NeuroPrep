@@ -149,10 +149,13 @@ def test_structural_derivatives_gate_every_anatomy_dependent_app() -> None:
     for executor_id in ("deepprep", "fmriprep", "qsiprep", "aslprep"):
         assert catalog.by_id(executor_id).requires_executor_ids == ("smriprep",)
     assert catalog.by_id("petprep").requires_executor_ids == ("smriprep", "deepprep")
-    assert catalog.by_id("xcp-d").requires_executor_ids == ("fmriprep",)
-    assert "/out/fmriprep" in catalog.by_id("xcp-d").command
+    # Downstream apps read a derivative interface, filled from whichever backend provides it.
+    assert catalog.by_id("xcp-d").consumes == ("fmriprep_bold",)
+    assert catalog.by_id("fmriprep").provides == {"fmriprep_bold": "/out/fmriprep"}
+    assert "{fmriprep_bold}" in catalog.by_id("xcp-d").command
     qsirecon = catalog.by_id("qsirecon")
-    assert qsirecon.requires_executor_ids == ("qsiprep",)
+    assert qsirecon.consumes == ("qsiprep_dwi",)
+    assert catalog.by_id("qsiprep").provides == {"qsiprep_dwi": "/out/qsiprep"}
     assert "--recon-spec" in qsirecon.command
     assert "dsi_studio_gqi" in qsirecon.command
     assert "{freesurfer_license}:/fs_license.txt:ro" in qsirecon.command

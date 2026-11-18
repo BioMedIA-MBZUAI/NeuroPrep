@@ -661,6 +661,7 @@ def prepare_prompt_run(
         {},
         required_executor_ids=required_executor_ids,
         required_stages={stage for task in probe_plan.tasks for stage in task.stages},
+        mandatory_stages={s for task in probe_plan.tasks if task.required for s in task.stages},
     )
     target_smoke_tests = [
         item.model_dump(mode="json") for item in unqualified_backend_plan.smoke_tests
@@ -688,6 +689,7 @@ def prepare_prompt_run(
         evidence,
         required_executor_ids=required_executor_ids,
         required_stages={stage for task in probe_plan.tasks for stage in task.stages},
+        mandatory_stages={s for task in probe_plan.tasks if task.required for s in task.stages},
         backend_evidence=evidence_binding,
         runtimes=runtimes,
     )

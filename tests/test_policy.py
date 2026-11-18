@@ -66,7 +66,7 @@ def test_backend_selection_is_hardware_aware_and_plans_bounded_smokes() -> None:
     assert dwi.selected_package == "qsiprep"
     assert dwi.selected_executor_id == "qsiprep"
     assert dwi.requires_smoke_test
-    assert dwi.rejected_candidates["mrtrix3"] == "adapter_not_integrated_or_qualified"
+    assert dwi.rejected_candidates["fsl"] == "adapter_not_integrated_or_qualified"
     smoke = next(item for item in plan.smoke_tests if item.capability == "dwi_preprocess")
     assert smoke.bounded_minutes <= 720
     assert "artifact_contract=pass" in smoke.expected_evidence
@@ -91,7 +91,14 @@ def test_backend_selection_can_be_scoped_to_required_executors() -> None:
 
 def test_failed_smoke_evidence_rejects_backend_fail_closed() -> None:
     policy = RunPolicy()
-    plan = plan_backends(policy, _gpu(), {"smoke--dwi_preprocess--qsiprep": "failed"})
+    fallback = plan_backends(policy, _gpu(), {"smoke--dwi_preprocess--qsiprep": "failed"})
+    dwi = next(item for item in fallback.decisions if item.capability == "dwi_preprocess")
+    assert dwi.selected_executor_id == "mrtrix3"  # the qualified alternative takes over
+    plan = plan_backends(
+        policy,
+        _gpu(),
+        {"smoke--dwi_preprocess--qsiprep": "failed", "smoke--dwi_preprocess--mrtrix3": "failed"},
+    )
     dwi = next(item for item in plan.decisions if item.capability == "dwi_preprocess")
     assert dwi.selected_executor_id is None
     assert dwi.rejected_candidates["qsiprep"] == "smoke_test_failed"
@@ -302,3 +309,22 @@ def test_every_integrated_backend_names_a_catalog_executor_that_meets_its_contra
             capability_contract(item.capability, objective) <= kinds for objective in objectives
         ), (item.capability, item.package_id)
     assert set(CAPABILITY_CONTRACTS) <= {item.capability for item in builtin_backend_portfolio()}
+
+
+DWI_PLAN = {"smriprep", "qsiprep", "qsirecon"}
+
+
+def test_mrtrix3_competes_when_it_takes_over_the_mandatory_tensor_fit() -> None:
+    plan = plan_backends(
+        RunPolicy(), _gpu(),
+        required_executor_ids=DWI_PLAN,
+        mandatory_stages={"anat_preprocess", "dwi_preprocess", "dti_fit"},
+    )
+    assert "smoke--dwi_preprocess--mrtrix3" in {t.test_id for t in plan.smoke_tests}
+    all_mandatory = plan_backends(
+        RunPolicy(), _gpu(),
+        required_executor_ids=DWI_PLAN,
+        mandatory_stages={"dwi_preprocess", "dti_fit", "advanced_diffusion_models"},
+    )
+    dwi = next(d for d in all_mandatory.decisions if d.capability == "dwi_preprocess")
+    assert dwi.rejected_candidates["mrtrix3"] == "qsirecon_needs_qsiprep_dwi"

@@ -380,6 +380,50 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             notes="FSL BASIL (oxford_asl) with voxelwise M0 calibration; alternative to ASLPrep.",
         ),
         ExecutorDefinition(
+            executor_id="mrtrix3",
+            version="3.0.8",
+            backend=ExecutorBackend.NATIVE,
+            scope=ExecutionScope.SUBJECT,
+            plugin_ids=("mri.dwi",),
+            stages=("dwi_preprocess", "dti_fit"),
+            alternative=True,
+            image="{container_root}/mrtrix3-3.0.8.sif",
+            image_source="docker://mrtrix3/mrtrix3:3.0.8",
+            command=(
+                "{agentic_python}",
+                "-m",
+                "neuroprep_agentic.native",
+                "run",
+                "--kind",
+                "mrtrix3-dwi",
+                "--context",
+                "{context_path}",
+                "--image",
+                "{image}",
+            ),
+            artifacts=(
+                artifact(
+                    "preprocessed_dwi",
+                    "native/sub-{subject}/**/mrtrix3-dwi/*_desc-preproc_dwi.nii.gz",
+                ),
+                artifact(
+                    "dwi_gradients",
+                    "native/sub-{subject}/**/mrtrix3-dwi/*_desc-preproc_dwi.bval",
+                    "native/sub-{subject}/**/mrtrix3-dwi/*_desc-preproc_dwi.bvec",
+                ),
+                artifact(
+                    "diffusion_model",
+                    "native/sub-{subject}/**/mrtrix3-dwi/*_model-tensor_param-fa_dwimap.nii.gz",
+                ),
+            ),
+            source="https://github.com/MRtrix3/mrtrix3",
+            notes=(
+                "dwidenoise, mrdegibbs, dwifslpreproc (topup with a reverse-PE b0 when present), "
+                "dwibiascorrect ants, dwi2mask, tensor fit. Takes over QSIRecon's tensor fit; "
+                "QSIRecon's optional models need QSIPrep-layout input and are dropped."
+            ),
+        ),
+        ExecutorDefinition(
             executor_id="totalsegmentator",
             version="2.18.0",
             backend=ExecutorBackend.BIDS_APP,
@@ -438,6 +482,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             plugin_ids=("mri.bold",),
             stages=("bold_preprocess",),
             requires_executor_ids=("smriprep",),
+            provides={"fmriprep_bold": "/out/fmriprep"},
             image="{container_root}/fmriprep-25.2.5.sif",
             image_source="docker://nipreps/fmriprep:25.2.5",
             command=(
@@ -491,7 +536,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             scope=ExecutionScope.SUBJECT,
             plugin_ids=("mri.bold",),
             stages=("bold_confounds",),
-            requires_executor_ids=("fmriprep",),
+            consumes=("fmriprep_bold",),
             image="{container_root}/xcpd-26.1.1.sif",
             image_source="docker://pennlinc/xcp_d:26.1.1",
             command=(
@@ -504,7 +549,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "--bind",
                 "{work_root}:/work",
                 "{image}",
-                "/out/fmriprep",
+                "{fmriprep_bold}",
                 "/out/xcpd",
                 "participant",
                 "--participant-label",
@@ -526,7 +571,9 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "--work-dir",
                 "/work/xcpd/{subject}",
             ),
-            artifacts=(artifact("denoised_bold", "xcpd/sub-{subject}/**/*denoised_bold.nii.gz"),),
+            artifacts=(
+                artifact("denoised_bold", "xcpd/sub-{subject}/**/*denoised_bold.nii.gz"),
+            ),
             source="https://github.com/PennLINC/xcp_d",
         ),
         ExecutorDefinition(
@@ -677,6 +724,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             plugin_ids=("mri.dwi",),
             stages=("dwi_preprocess",),
             requires_executor_ids=("smriprep",),
+            provides={"qsiprep_dwi": "/out/qsiprep"},
             image="{container_root}/qsiprep-26.0.0.sif",
             image_source="docker://pennlinc/qsiprep:26.0.0",
             command=(
@@ -747,7 +795,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             scope=ExecutionScope.SUBJECT,
             plugin_ids=("mri.dwi",),
             stages=("dti_fit", "advanced_diffusion_models", "tractography"),
-            requires_executor_ids=("qsiprep",),
+            consumes=("qsiprep_dwi",),
             image="{container_root}/qsirecon-1.1.1.sif",
             image_source="docker://pennlinc/qsirecon:1.1.1",
             command=(
@@ -762,7 +810,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "--bind",
                 "{freesurfer_license}:/fs_license.txt:ro",
                 "{image}",
-                "/out/qsiprep",
+                "{qsiprep_dwi}",
                 "/out/qsirecon",
                 "participant",
                 "--participant-label",
@@ -1131,11 +1179,16 @@ class ExecutorCatalog:
     def resolve(
         self, plugin_id: str, stage: str, selected: Collection[str] = ()
     ) -> ExecutorDefinition:
-        """The route's default executor, or the alternative a backend decision selected."""
-        for definition in self.alternatives(plugin_id, stage):
+        """The alternative a backend decision selected, else the route's default.
+
+        A selected alternative claims every route it serves, so a backend that covers
+        several stages (e.g. MRtrix3: preprocessing and tensor fit) runs all of them.
+        """
+        default, *alternatives = self.alternatives(plugin_id, stage)
+        for definition in alternatives:
             if definition.executor_id in selected:
                 return definition
-        return self.alternatives(plugin_id, stage)[0]
+        return default
 
     def alternatives(self, plugin_id: str, stage: str) -> tuple[ExecutorDefinition, ...]:
         """Every executor for a route, default first."""

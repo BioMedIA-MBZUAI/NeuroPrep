@@ -51,6 +51,11 @@ class ExecutorDefinition(BaseModel):
     # True: competes with the default executor of its stages; runs only when chosen
     # by a backend decision, or as a qualification candidate in a comparison pilot.
     alternative: bool = False
+    # Derivative interfaces: what this executor's outputs can stand in for (interface ->
+    # container path under /out), and which interfaces its command reads. A consumer's
+    # command names an interface as a placeholder, filled from the planned provider.
+    provides: dict[str, str] = Field(default_factory=dict)
+    consumes: tuple[str, ...] = ()
     source: str
     notes: str = ""
 

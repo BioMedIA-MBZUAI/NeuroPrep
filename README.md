@@ -64,10 +64,16 @@ A backend only competes when it produces everything its capability promises
 | ... when the request asks for speed or low memory | + SynthSeg (FreeSurfer 7.4.1) | volumetric only, no surfaces |
 | ASL perfusion | ASLPrep 26.0.3, FSL BASIL (oxford_asl 4.0.29) | BASIL needs an M0 |
 | CT segmentation | NeuroPrep spatial (ANTs), TotalSegmentator 2.18.0 | free `total` task, brain and skull |
+| Diffusion preprocessing | QSIPrep 26.0.0, MRtrix3 3.0.8 | MRtrix3 also fits the tensor itself |
 
-fMRI (fMRIPrep vs DeepPrep-BOLD) and diffusion (QSIPrep vs MRtrix3) alternatives need
-XCP-D and QSIRecon to read whichever backend produced their inputs; until then those
-capabilities keep their single integrated backend.
+Downstream apps read **derivative interfaces** rather than a fixed producer: XCP-D
+consumes `fmriprep_bold`, QSIRecon consumes `qsiprep_dwi`, and the compiler fills the
+path from whichever planned backend provides it. An alternative that does not provide
+an interface a planned consumer reads is rejected, unless it takes over that consumer's
+mandatory stages (MRtrix3 fits tensors instead of QSIRecon; QSIRecon's optional advanced
+models are then dropped with a plan warning). DeepPrep 25.1.0's BOLD output is not an
+alternative yet: XCP-D 26.1.1 needs an MNI-space brain mask and ANTs transforms that
+DeepPrep does not write.
 
 ### Choosing a language model
 
