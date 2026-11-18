@@ -78,6 +78,12 @@ def _format_values(
             spatial.append(modality)
     image = definition.image or ""
     image = image.format(container_root=layout.container_root)
+    bids_inputs = list(task.metadata.get("bids_inputs", [])) if task else []
+    bids_input = (
+        str(Path("/source-data") / Path(str(bids_inputs[0])).relative_to(layout.bids_root))
+        if len(bids_inputs) == 1
+        else ""
+    )
     primary = task.metadata.get("primary_anatomical_bids_input") if task else None
     primary_t1w = (
         str(Path("/source-data") / Path(str(primary)).relative_to(layout.bids_root))
@@ -110,6 +116,10 @@ def _format_values(
         "memory_gb": str(task.memory_gb if task else 4),
         "spatial_modalities": " ".join(spatial),
         "primary_t1w": primary_t1w,
+        "bids_input": bids_input,
+        "acquisition": (
+            _safe_label(task.acquisition_ids[0]) if task and task.acquisition_ids else ""
+        ),
     }
 
 
@@ -413,6 +423,7 @@ def compile_execution_plan(
     grouped: dict[tuple[str, ...], list[TaskSpec]] = defaultdict(list)
     definitions: dict[tuple[str, ...], ExecutorDefinition] = {}
     candidate_keys: set[tuple[str, ...]] = set()
+    committed_keys: set[tuple[str, ...]] = set()  # also does non-compared (required) work
     for task in logical_plan.tasks:
         compared = [
             item
@@ -428,8 +439,8 @@ def compile_execution_plan(
             key = _scope_key(definition, task)
             grouped[key].append(task)
             definitions[key] = definition
-            if len(compared) > 1:
-                candidate_keys.add(key)
+            (candidate_keys if len(compared) > 1 else committed_keys).add(key)
+    candidate_keys -= committed_keys
 
     pending_dependency_ids: dict[str, set[str]] = {}
     for key, members in grouped.items():
@@ -501,7 +512,7 @@ def compile_execution_plan(
                 **({"qualification_candidate": True} if key in candidate_keys else {}),
             },
         )
-        if definition.executor_id in {"smriprep", "deepprep", "fastsurfer"}:
+        if definition.executor_id in {"smriprep", "deepprep", "fastsurfer", "synthseg"}:
             primary = select_primary_t1(
                 [
                     (item, acquisitions[item].source.metadata)

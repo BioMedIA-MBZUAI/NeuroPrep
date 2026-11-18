@@ -147,6 +147,8 @@ class BackendCandidate(BaseModel):
     package_id: str
     executor_id: str | None = None
     integration_state: Literal["integrated", "candidate"]
+    # Activate only when the plan contains this stage (an executor may serve many stages).
+    stage: str | None = None
     objective_tags: set[ProcessingObjective] = Field(default_factory=set)
     min_cpus: int = 1
     min_memory_gb: int = 4
@@ -255,6 +257,31 @@ def detect_hardware_profile() -> HardwareProfile:
     )
 
 
+# Artifact kinds a backend must declare to stand in for a capability, so a comparison
+# never trades away outputs for speed. Some objectives accept a smaller contract.
+CAPABILITY_CONTRACTS: dict[str, frozenset[str]] = {
+    "structural_preprocess": frozenset({"preprocessed_t1w", "brain_mask"}),
+    "structural_segment": frozenset(
+        {"segmentation", "left_white_surface", "right_white_surface"}
+    ),
+    "bold_preprocess": frozenset({"preprocessed_bold", "bold_confounds"}),
+    "dwi_preprocess": frozenset({"preprocessed_dwi", "dwi_gradients"}),
+    "asl": frozenset({"cbf_map"}),
+}
+RELAXED_CONTRACTS: dict[tuple[str, ProcessingObjective], frozenset[str]] = {
+    # Volumetric segmentation without cortical surfaces is acceptable when asked for speed
+    # or a small memory footprint (e.g. SynthSeg).
+    ("structural_segment", ProcessingObjective.FAST): frozenset({"segmentation"}),
+    ("structural_segment", ProcessingObjective.LOW_MEMORY): frozenset({"segmentation"}),
+}
+
+
+def capability_contract(capability: str, objective: ProcessingObjective) -> frozenset[str]:
+    return RELAXED_CONTRACTS.get(
+        (capability, objective), CAPABILITY_CONTRACTS.get(capability, frozenset())
+    )
+
+
 def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
     def integrated(
         capability: str,
@@ -264,12 +291,14 @@ def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
         gpu: int = 0,
         gpu_memory: int = 0,
         tags: tuple[ProcessingObjective, ...] = (ProcessingObjective.STANDARD,),
+        stage: str | None = None,
     ) -> BackendCandidate:
         return BackendCandidate(
             capability=capability,
             package_id=package,
             executor_id=executor,
             integration_state="integrated",
+            stage=stage,
             objective_tags=set(tags),
             min_cpus=4,
             min_memory_gb=16,
@@ -303,7 +332,12 @@ def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
         candidate("structural_preprocess", "synthseg", gpu=1),
         integrated("structural_segment", "deepprep", "deepprep", gpu=1, gpu_memory=8),
         integrated("structural_segment", "fastsurfer", "fastsurfer", gpu=1, gpu_memory=8),
-        candidate("structural_segment", "synthseg", gpu=1),
+        integrated(
+            "structural_segment",
+            "synthseg",
+            "synthseg",
+            tags=(ProcessingObjective.FAST, ProcessingObjective.LOW_MEMORY),
+        ),
         integrated("bold_preprocess", "fmriprep", "fmriprep"),
         candidate("bold_preprocess", "deepprep", gpu=1),
         integrated("bold_postprocess", "xcp-d", "xcp-d"),
@@ -314,15 +348,19 @@ def builtin_backend_portfolio() -> tuple[BackendCandidate, ...]:
         candidate("diffusion_model", "mrtrix3"),
         candidate("diffusion_model", "dipy"),
         integrated("asl", "aslprep", "aslprep"),
-        candidate("asl", "basil"),
+        integrated("asl", "basil", "basil"),
         candidate("asl", "exploreasl"),
         integrated("pet", "petprep", "petprep"),
         candidate("pet", "petpvc"),
         candidate("pet", "spm"),
         integrated("swi_qsm", "qsmxt", "neuroprep-susceptibility", gpu=1),
-        integrated("ct", "ants", "neuroprep-ct"),
-        candidate("ct", "totalsegmentator", gpu=1),
-        integrated("eeg", "mne", "neuroprep-eeg"),
+        integrated("ct", "ants", "neuroprep-spatial", stage="ct_preprocess"),
+        integrated("ct_segment", "ants", "neuroprep-spatial", stage="ct_segment"),
+        integrated(
+            "ct_segment", "totalsegmentator", "totalsegmentator", gpu=1, gpu_memory=8,
+            stage="ct_segment",
+        ),
+        integrated("eeg", "mne", "neuroprep-sensor-eeg"),
         candidate("eeg", "eeglab"),
         integrated("mrs", "fsl-mrs", "fsl-mrs"),
         candidate("mrs", "lcmodel"),
@@ -337,6 +375,7 @@ def plan_backends(
     required_executor_ids: set[str] | frozenset[str] | None = None,
     backend_evidence: BackendEvidenceBinding | None = None,
     runtimes: dict[str, float] | None = None,
+    required_stages: set[str] | frozenset[str] | None = None,
 ) -> BackendPlan:
     """Choose one backend per capability.
 
@@ -359,7 +398,9 @@ def plan_backends(
         active_capabilities = {
             item.capability
             for item in portfolio
-            if item.executor_id is not None and item.executor_id in required_executor_ids
+            if item.executor_id is not None
+            and item.executor_id in required_executor_ids
+            and (item.stage is None or required_stages is None or item.stage in required_stages)
         }
         portfolio = tuple(
             item for item in portfolio if item.capability in active_capabilities
@@ -382,6 +423,16 @@ def plan_backends(
                 continue
             if pinned is not None and item.executor_id != pinned:
                 rejected[item.package_id] = f"{pinned_by[pinned]}_requires_{pinned}"
+                continue
+            declared = {
+                requirement.kind
+                for definition in catalog.definitions
+                if definition.executor_id == item.executor_id
+                for requirement in definition.artifacts
+            }
+            missing = capability_contract(capability, policy.objective) - declared
+            if declared and missing:
+                rejected[item.package_id] = "missing_outputs_" + "+".join(sorted(missing))
                 continue
             if item.min_gpus > hardware.gpus:
                 rejected[item.package_id] = "insufficient_gpus"

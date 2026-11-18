@@ -53,9 +53,21 @@ backend per capability: failed backends are rejected; then a package named in th
 prompt wins; then the shortest measured pilot runtime. A capability whose backend
 another planned executor depends on (for example PETPrep on DeepPrep's
 reconstruction) is pinned to it. `autopilot-report.json` lists the compared
-backends, the losers and the reasons for each selection. Today whole-brain
-segmentation compares DeepPrep 25.1.0 and FastSurfer 2.6.1; other capabilities have
-one integrated backend until more adapters are added.
+backends, the losers and the reasons for each selection.
+
+A backend only competes when it produces everything its capability promises
+(`CAPABILITY_CONTRACTS` in `policy.py`), so a comparison never trades outputs for speed.
+
+| Capability | Compared backends | Note |
+|---|---|---|
+| Whole-brain segmentation (T1w) | DeepPrep 25.1.0, FastSurfer 2.6.1 | segmentation + white surfaces |
+| ... when the request asks for speed or low memory | + SynthSeg (FreeSurfer 7.4.1) | volumetric only, no surfaces |
+| ASL perfusion | ASLPrep 26.0.3, FSL BASIL (oxford_asl 4.0.29) | BASIL needs an M0 |
+| CT segmentation | NeuroPrep spatial (ANTs), TotalSegmentator 2.18.0 | free `total` task, brain and skull |
+
+fMRI (fMRIPrep vs DeepPrep-BOLD) and diffusion (QSIPrep vs MRtrix3) alternatives need
+XCP-D and QSIRecon to read whichever backend produced their inputs; until then those
+capabilities keep their single integrated backend.
 
 ### Choosing a language model
 

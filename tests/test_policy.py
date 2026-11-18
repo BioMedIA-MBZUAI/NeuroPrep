@@ -245,3 +245,60 @@ def test_a_backend_another_executor_requires_is_pinned() -> None:
     assert decision.selected_package == "deepprep"
     assert decision.rejected_candidates["fastsurfer"] == "petprep_requires_deepprep"
     assert FASTSURFER not in {t.test_id for t in plan.smoke_tests}
+
+
+SYNTHSEG = f"smoke--{SEGMENT}--synthseg"
+
+
+def test_synthseg_lacks_surfaces_so_it_only_competes_for_fast_requests() -> None:
+    standard = plan_backends(RunPolicy(), _gpu(), required_executor_ids=T1_ONLY)
+    decision = next(d for d in standard.decisions if d.capability == SEGMENT)
+    assert decision.rejected_candidates["synthseg"] == (
+        "missing_outputs_left_white_surface+right_white_surface"
+    )
+    assert SYNTHSEG not in {t.test_id for t in standard.smoke_tests}
+
+    fast = RunPolicy(source_prompt="segment quickly", objective=ProcessingObjective.FAST)
+    planned = plan_backends(fast, _gpu(), required_executor_ids=T1_ONLY)
+    assert {DEEPPREP, FASTSURFER, SYNTHSEG} <= {t.test_id for t in planned.smoke_tests}
+    passed = plan_backends(
+        fast, _gpu(), {DEEPPREP: "passed", FASTSURFER: "passed", SYNTHSEG: "passed"},
+        required_executor_ids=T1_ONLY,
+    )
+    assert _segmenter(passed) == "synthseg"  # matches the fast objective
+
+
+def test_capabilities_activate_by_stage_not_just_executor() -> None:
+    flair_only = plan_backends(
+        RunPolicy(), _gpu(),
+        required_executor_ids={"neuroprep-spatial"},
+        required_stages={"flair_preprocess", "anat_preprocess"},
+    )
+    assert not {d.capability for d in flair_only.decisions} & {"ct", "ct_segment"}
+    with_ct = plan_backends(
+        RunPolicy(), _gpu(),
+        required_executor_ids={"neuroprep-spatial"},
+        required_stages={"ct_preprocess", "ct_segment"},
+    )
+    assert {"ct", "ct_segment"} <= {d.capability for d in with_ct.decisions}
+
+
+def test_every_integrated_backend_names_a_catalog_executor_that_meets_its_contract() -> None:
+    from neuroprep_agentic.executors import builtin_executor_catalog
+    from neuroprep_agentic.policy import (
+        CAPABILITY_CONTRACTS,
+        builtin_backend_portfolio,
+        capability_contract,
+    )
+
+    catalog = builtin_executor_catalog()
+    for item in builtin_backend_portfolio():
+        if item.integration_state != "integrated":
+            continue
+        definition = catalog.by_id(str(item.executor_id))  # KeyError = dangling portfolio entry
+        kinds = {a.kind for a in definition.artifacts}
+        objectives = item.objective_tags or {ProcessingObjective.STANDARD}
+        assert any(
+            capability_contract(item.capability, objective) <= kinds for objective in objectives
+        ), (item.capability, item.package_id)
+    assert set(CAPABILITY_CONTRACTS) <= {item.capability for item in builtin_backend_portfolio()}

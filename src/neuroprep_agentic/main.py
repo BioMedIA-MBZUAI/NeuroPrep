@@ -614,6 +614,7 @@ def cli(argv: list[str] | None = None) -> None:
             profile,
             {},
             required_executor_ids=required_executor_ids,
+        required_stages={stage for task in probe_plan.tasks for stage in task.stages},
         )
         target_smoke_tests = [
             item.model_dump(mode="json") for item in unqualified.smoke_tests
@@ -641,6 +642,7 @@ def cli(argv: list[str] | None = None) -> None:
             profile,
             evidence,
             required_executor_ids=required_executor_ids,
+        required_stages={stage for task in probe_plan.tasks for stage in task.stages},
             backend_evidence=evidence_binding,
         )
         plan = compile_execution_plan(

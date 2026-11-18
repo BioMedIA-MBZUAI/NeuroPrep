@@ -324,11 +324,23 @@ def test_every_executor_compiles_in_one_dataset_agnostic_dag(nfs_tmp: Path) -> N
         PlanResult(tasks=logical_tasks),
         layout,
         catalog,
-        qualification_candidates={"deepprep", "fastsurfer"},
+        qualification_candidates={
+            "deepprep", "fastsurfer", "synthseg", "aslprep", "basil",
+            "neuroprep-spatial", "totalsegmentator",
+        },
     )
     assert {task.executor_id for task in compared.tasks} == {
         definition.executor_id for definition in catalog.definitions
     }
+    spatial = next(t for t in compared.tasks if t.executor_id == "neuroprep-spatial")
+    assert spatial.required  # also does non-compared FLAIR/T2w/CT preprocessing
+    totalseg = next(t for t in compared.tasks if t.executor_id == "totalsegmentator")
+    assert not totalseg.required and totalseg.metadata["qualification_candidate"] is True
+    image = totalseg.command[totalseg.command.index("-i") + 1]
+    assert image.startswith("/source-data/sub-all/") and image.endswith(".nii.gz")
+    assert totalseg.environment["TOTALSEG_HOME_DIR"].startswith(totalseg.work_dir)
+    basil = next(t for t in compared.tasks if t.executor_id == "basil")
+    assert basil.command[basil.command.index("--image") + 1].endswith("fsl-6.0.7.18.sif")
     assert any(task.executor_id == "fsl-mrs" for task in plan.tasks)
     assert any(task.executor_id == "neuroprep-ultrasound" for task in plan.tasks)
     assert any(task.executor_id == "neuroprep-angio" for task in plan.tasks)

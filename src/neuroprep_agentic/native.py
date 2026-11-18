@@ -1264,7 +1264,99 @@ def _ants_registration(task: ExecutableTask, output: Path, longitudinal: bool) -
     return {"status": "pass", "references": reference_evidence, "artifacts": products}
 
 
-def run_native(task: ExecutableTask, kind: str) -> dict[str, Any]:
+def oxford_asl_arguments(
+    metadata: dict[str, Any], volume_types: list[str]
+) -> tuple[list[str], list[int], list[int]]:
+    """Map BIDS-ASL metadata to FSL ``oxford_asl`` flags.
+
+    Returns (flags, data volume indices, M0 volume indices). PASL PostLabelingDelay is
+    already the inversion time in BIDS, so it is passed as ``--tis``; (P)CASL delays go
+    to ``--plds`` with ``--bolus`` = LabelingDuration.
+    """
+    data = [i for i, kind in enumerate(volume_types) if kind in {"label", "control", "deltam"}]
+    m0 = [i for i, kind in enumerate(volume_types) if kind == "m0scan"]
+    if not data:
+        raise ValueError("ASL series has no label, control or deltam volumes")
+    if not m0:
+        raise ValueError("BASIL adapter needs an M0 (m0scan volumes) for calibrated CBF")
+    first = volume_types[data[0]]
+    flags = ["--iaf", {"label": "tc", "control": "ct", "deltam": "diff"}[first]]
+    labeling = str(metadata.get("ArterialSpinLabelingType", "")).upper()
+    if labeling not in {"PCASL", "CASL", "PASL"}:
+        raise ValueError(f"unsupported ArterialSpinLabelingType: {labeling or 'missing'}")
+    delay = metadata.get("PostLabelingDelay")
+    if delay is None:
+        raise ValueError("ASL sidecar lacks PostLabelingDelay")
+    per_volume = list(delay) if isinstance(delay, list) else [delay] * len(volume_types)
+    step = 1 if first == "deltam" else 2
+    sequence = [float(per_volume[index]) for index in data[::step]]
+    unique = list(dict.fromkeys(sequence))
+    if len(unique) > 1:
+        cyclic = sequence == unique * (len(sequence) // len(unique))
+        grouped = all(
+            sequence.index(value) + sequence.count(value) - 1
+            == len(sequence) - 1 - sequence[::-1].index(value)
+            for value in unique
+        )
+        if not (cyclic or grouped):
+            raise ValueError("multi-PLD ordering is neither repeated nor grouped")
+        flags += ["--ibf", "rpt" if cyclic else "tis"]
+    delays = ",".join(f"{value:g}" for value in unique)
+    if labeling == "PASL":
+        bolus = metadata.get("BolusCutOffDelayTime")
+        if bolus is None:
+            raise ValueError("PASL needs BolusCutOffDelayTime for the bolus duration")
+        flags += ["--tis", delays, "--bolus", f"{float(bolus):g}"]
+    else:
+        duration = metadata.get("LabelingDuration")
+        if duration is None:
+            raise ValueError("(P)CASL needs LabelingDuration")
+        flags += ["--casl", "--plds", delays, "--bolus", f"{float(duration):g}"]
+    repetition = metadata.get("RepetitionTimePreparation") or metadata.get("RepetitionTime")
+    flags += ["--tr", f"{float(repetition):g}", "--cmethod", "voxel"]
+    timing = metadata.get("SliceTiming")
+    if metadata.get("MRAcquisitionType") == "2D" and isinstance(timing, list) and len(timing) > 1:
+        ordered = sorted(float(value) for value in timing)
+        gaps = [b - a for a, b in zip(ordered, ordered[1:], strict=False) if b > a]
+        if gaps:
+            flags += ["--slicedt", f"{sum(gaps) / len(gaps):g}"]
+    return flags, data, m0
+
+
+def _basil(task: ExecutableTask, output: Path, image: Path) -> dict[str, Any]:
+    asl = next(path for path in _bids_inputs(task) if path.name.endswith("_asl.nii.gz"))
+    stem = asl.name[: -len("_asl.nii.gz")]
+    metadata = json.loads(asl.with_name(stem + "_asl.json").read_text(encoding="utf-8"))
+    rows = asl.with_name(stem + "_aslcontext.tsv").read_text(encoding="utf-8").splitlines()
+    volume_types = [row.strip().split("\t")[0] for row in rows[1:] if row.strip()]
+    flags, data, m0 = oxford_asl_arguments(metadata, volume_types)
+    binds = [
+        item
+        for root in sorted(set(_settings.ALLOWED_ROOTS), key=str)
+        if root.is_dir()
+        for item in ("--bind", f"{root}:{root}")
+    ]
+    fsl = [str(paths.container_runtime()), "exec", "--cleanenv", "--containall", *binds, str(image)]
+    output.mkdir(parents=True, exist_ok=True)
+    asl_data, m0_image, basil = output / "asl_data.nii.gz", output / "m0.nii.gz", output / "basil"
+    steps = [
+        [*fsl, "fslselectvols", "-i", str(asl), "-o", str(asl_data),
+         "--vols=" + ",".join(map(str, data))],
+        [*fsl, "fslselectvols", "-i", str(asl), "-o", str(m0_image),
+         "--vols=" + ",".join(map(str, m0)), "-m"],
+        [*fsl, "oxford_asl", "-i", str(asl_data), "-o", str(basil), "-c", str(m0_image), *flags],
+    ]
+    for command in steps:
+        completed = subprocess.run(command, check=False)
+        if completed.returncode != 0:
+            raise RuntimeError(f"BASIL step failed ({completed.returncode}): {command[-4:]}")
+    cbf = basil / "native_space" / "perfusion_calib.nii.gz"
+    if not cbf.is_file():
+        raise RuntimeError(f"oxford_asl wrote no calibrated perfusion map: {cbf}")
+    return {"oxford_asl_flags": flags, "cbf_map": str(cbf), "m0_volumes": len(m0)}
+
+
+def run_native(task: ExecutableTask, kind: str, image: str | None = None) -> dict[str, Any]:
     if kind == "bids-init":
         return _bids_init(task)
     if kind == "bids-validate":
@@ -1296,6 +1388,10 @@ def run_native(task: ExecutableTask, kind: str) -> dict[str, Any]:
         result = _ants_registration(task, output, False)
     elif kind == "longitudinal-template":
         result = _ants_registration(task, output, True)
+    elif kind == "basil":
+        if not image:
+            raise ValueError("basil requires --image")
+        result = _basil(task, output, validated_cluster_path(image, must_exist=True))
     else:
         result = _copy_modality(task, output, kind)
     report = output / f"{_safe_filename(task.task_id)}_{kind}_qc.json"
@@ -1322,10 +1418,11 @@ def cli() -> None:
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--kind", required=True)
     run_parser.add_argument("--context", required=True)
+    run_parser.add_argument("--image", help="Container image for container-backed kinds")
     arguments = parser.parse_args()
     context = validated_cluster_path(arguments.context, must_exist=True)
     task = ExecutableTask.model_validate_json(context.read_text(encoding="utf-8"))
-    result = run_native(task, arguments.kind)
+    result = run_native(task, arguments.kind, arguments.image)
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

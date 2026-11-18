@@ -30,6 +30,13 @@
   pilot before it initializes.
 - FastSurfer 2.6.1 (`deepmi/fastsurfer:cu126-v2.6.1`) as an alternative to DeepPrep
   for whole-brain segmentation and surfaces.
+- SynthSeg (`freesurfer/freesurfer:7.4.1`, `mri_synthseg --parc --robust`), FSL BASIL
+  (`vnmd/fsl_6.0.7.18`, BIDS-ASL metadata mapped to `oxford_asl` flags) and
+  TotalSegmentator 2.18.0 (free `total` task) as alternative backends.
+- Capability contracts: a backend competes only if it declares every output its
+  capability requires; `fast`/`low_memory` requests accept volumetric segmentation.
+- Backend capabilities activate by plan stage, not only by executor, and an executor
+  that also does non-compared work stays required in a comparison pilot.
 - `NEUROPREP_CONTAINER_RUNTIME` selects the Singularity or Apptainer executable;
   otherwise `singularity`, then `apptainer`, is found on `PATH`. Executor commands
   use a `{container_runtime}` placeholder instead of `/usr/bin/singularity`.
@@ -62,5 +69,7 @@
   the model as a schema enum, and one repair attempt shows the model its validation error.
 - The BIDS validator image was pinned to `bids/validator:v3.0.1`, a tag that does not
   exist on Docker Hub; it is now `3.0.1`. The executor catalog digest changes.
+- The CT and EEG backend portfolio entries named executors that do not exist
+  (`neuroprep-ct`, `neuroprep-eeg`), so those capabilities never got a decision.
 - Settings rejected every model that was not `ollama/...`.
 - The review crew could not use Claude without the `crewai[anthropic]` extra.
