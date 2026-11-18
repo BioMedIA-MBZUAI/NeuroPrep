@@ -17,6 +17,9 @@
 - `neuroprep_agentic.paths`: every host-specific location (tools, containers,
   data roots, NeuroPrep v4 checkout) is configured through `NEUROPREP_*`
   environment variables with defaults under `NEUROPREP_HOME` (`~/.neuroprep`).
+- Optional site TemplateFlow cache: when `$NEUROPREP_TOOLS_ROOT/templateflow` exists, its
+  files are copied into every run's TemplateFlow cache, so BIDS Apps need no S3 access at
+  run time (on CIAI, TemplateFlow downloads failed with connection resets).
 - `neuroprep-agentic --version`.
 - `runtime-check` reports the configured LLM provider; hosted providers are
   checked for credentials without spending tokens.

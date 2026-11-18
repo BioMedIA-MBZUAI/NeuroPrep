@@ -20,6 +20,9 @@ NEXTFLOW_SEED = (
     / f"nextflow-{NEXTFLOW_VERSION}-one.jar"
 )
 
+# Site TemplateFlow cache copied into every run, so containers need no S3 access at run time.
+TEMPLATEFLOW_SEED = paths.tools_root() / "templateflow"
+
 ASLPREP_PATCH_VERSION = "26.0.3-neuroprep-2"
 ASLPREP_IMAGE_NAME = "aslprep-26.0.3.sif"
 ASLPREP_TEMPLATEFLOW_TRANSFORM_SIZE = 204_735_104
@@ -272,7 +275,30 @@ def runtime_asset_inventory(plan: ExecutionPlan) -> dict[str, Any]:
     return {"ready": all(item["ready"] for item in assets), "assets": assets}
 
 
+def _copy_if_missing(source: str, destination: str) -> str:
+    if not os.path.exists(destination):
+        shutil.copy2(source, destination)
+    return destination
+
+
+def seed_templateflow(plan: ExecutionPlan) -> Path | None:
+    """Copy the site TemplateFlow cache into the run's cache; existing files are kept.
+
+    shortcut: files are not hash-pinned; pin them like Nextflow if template audits need it.
+    """
+    if not TEMPLATEFLOW_SEED.is_dir():
+        return None
+    destination = validated_cluster_path(
+        str(Path(plan.layout.work_root) / "cache" / "templateflow")
+    )
+    shutil.copytree(
+        TEMPLATEFLOW_SEED, destination, dirs_exist_ok=True, copy_function=_copy_if_missing
+    )
+    return destination
+
+
 def prepare_runtime_assets(plan: ExecutionPlan) -> dict[str, Any]:
+    seed_templateflow(plan)
     if _needs_nextflow(plan):
         seed = validated_cluster_path(str(NEXTFLOW_SEED), must_exist=True)
         if not _valid_nextflow(seed):

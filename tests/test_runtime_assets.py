@@ -143,3 +143,24 @@ def test_aslprep_patches_are_generated_from_the_pinned_image(
     transform = runtime_assets.aslprep_templateflow_transform_destination(plan)
     assert transform.read_bytes() == transform_payload
     assert transform.stat().st_mode & 0o777 == 0o444
+
+
+def test_templateflow_seed_is_copied_without_overwriting(monkeypatch, nfs_tmp: Path) -> None:
+    seed = nfs_tmp / "tools" / "templateflow"
+    (seed / "tpl-OASIS30ANTs").mkdir(parents=True)
+    (seed / "tpl-OASIS30ANTs" / "T1w.nii.gz").write_bytes(b"seed")
+    (seed / "tpl-OASIS30ANTs" / "kept.txt").write_bytes(b"seed")
+    monkeypatch.setattr(runtime_assets, "TEMPLATEFLOW_SEED", seed)
+    plan = _plan(nfs_tmp, with_deepprep=False)
+    cache = Path(plan.layout.work_root) / "cache" / "templateflow" / "tpl-OASIS30ANTs"
+    cache.mkdir(parents=True)
+    (cache / "kept.txt").write_bytes(b"run")
+
+    runtime_assets.prepare_runtime_assets(plan)
+    assert (cache / "T1w.nii.gz").read_bytes() == b"seed"
+    assert (cache / "kept.txt").read_bytes() == b"run"
+
+
+def test_templateflow_seed_is_optional(monkeypatch, nfs_tmp: Path) -> None:
+    monkeypatch.setattr(runtime_assets, "TEMPLATEFLOW_SEED", nfs_tmp / "absent")
+    assert runtime_assets.seed_templateflow(_plan(nfs_tmp, with_deepprep=False)) is None
