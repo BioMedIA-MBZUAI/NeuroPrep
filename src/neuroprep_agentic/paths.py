@@ -23,6 +23,7 @@ Variable                       Default
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -36,6 +37,18 @@ ANTS_IMAGE_NAME = "ants-2.6.5.sif"
 def _env_path(name: str) -> Path | None:
     value = os.environ.get(name, "").strip()
     return Path(value).expanduser() if value else None
+
+
+def container_runtime() -> Path:
+    """Absolute Singularity/Apptainer executable: NEUROPREP_CONTAINER_RUNTIME, else PATH."""
+    configured = _env_path("NEUROPREP_CONTAINER_RUNTIME")
+    if configured:
+        return configured
+    for name in ("singularity", "apptainer"):
+        found = shutil.which(name)
+        if found:
+            return Path(found).resolve()
+    return Path("/usr/bin/singularity")
 
 
 def neuroprep_home() -> Path:

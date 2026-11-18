@@ -3,7 +3,7 @@ name = "neuroprep-agentic"
 dynamic = ["version"]
 description = "Dataset-agnostic agentic control plane for multimodal neurodata ingestion and preprocessing"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE", "CITATION.cff"]
 authors = [{ name = "Salma Hassan" }]
@@ -14,6 +14,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
   "Topic :: Scientific/Engineering :: Medical Science Apps.",

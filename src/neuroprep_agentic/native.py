@@ -506,7 +506,7 @@ def _bids_validate(task: ExecutableTask) -> dict[str, Any]:
         },
     )
     command = [
-        "/usr/bin/singularity",
+        str(paths.container_runtime()),
         "run",
         "--cleanenv",
         "--containall",
@@ -1206,7 +1206,7 @@ def _ants_registration(task: ExecutableTask, output: Path, longitudinal: bool) -
     if longitudinal:
         prefix = output / "longitudinal-template-"
         command = [
-            "/usr/bin/singularity",
+            str(paths.container_runtime()),
             "exec",
             "--cleanenv",
             "--containall",
@@ -1225,7 +1225,7 @@ def _ants_registration(task: ExecutableTask, output: Path, longitudinal: bool) -
         for index, moving in enumerate(references[1:], start=1):
             prefix = output / f"multimodal-registration-{index}-"
             command = [
-                "/usr/bin/singularity",
+                str(paths.container_runtime()),
                 "exec",
                 "--cleanenv",
                 "--containall",

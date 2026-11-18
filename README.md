@@ -68,6 +68,8 @@ export NEUROPREP_MANAGER_MODEL=anthropic/claude-sonnet-5-5
 export NEUROPREP_WORKER_MODEL=anthropic/claude-haiku-5-5
 export ANTHROPIC_API_KEY=...
 neuroprep-agentic runtime-check   # reports the provider and whether it is reachable
+# one real, schema-validated call (a few hundred tokens) before a long run:
+neuroprep-agentic prompt-policy --request "Preprocess the T1-weighted MRI" --output policy.json
 ```
 
 `NEUROPREP_WORKER_MODEL` drives the advisory review agents. The older
@@ -97,6 +99,7 @@ the environment, with defaults under `NEUROPREP_HOME` (`~/.neuroprep`):
 | `NEUROPREP_V4_PROJECT` | NeuroPrep multimodal v4 checkout used by v4 executors | `$NEUROPREP_HOME/NeuroPrep-multimodal-v4` |
 | `NEUROPREP_AGENTIC_PROJECT` | Git checkout whose commit is recorded in compiled plans | this checkout, else `$NEUROPREP_HOME/NeuroPrep-agentic` |
 | `NEUROPREP_FSL_MRS_ROOT`, `NEUROPREP_DCM2NIIX`, `NEUROPREP_ANTS_IMAGE` | Individual tool overrides | under the tools/container roots |
+| `NEUROPREP_CONTAINER_RUNTIME` | Singularity or Apptainer executable | `singularity`, then `apptainer`, on `PATH` |
 
 Compiled execution plans record the git commit of `NEUROPREP_AGENTIC_PROJECT`
 as provenance, so plan compilation and evidence binding need a git checkout of

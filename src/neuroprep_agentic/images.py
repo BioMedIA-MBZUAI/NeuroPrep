@@ -66,7 +66,7 @@ def catalog_images(catalog: ExecutorCatalog) -> tuple[ImageSpec, ...]:
 
 
 def _spec_inventory(specs: tuple[ImageSpec, ...], *, inspect: bool = False) -> dict[str, Any]:
-    singularity = Path("/usr/bin/singularity")
+    singularity = paths.container_runtime()
     rows = []
     for spec in specs:
         path = validated_cluster_path(spec.path)
@@ -129,7 +129,7 @@ def image_inventory(
 
 
 def prefetch_catalog_images(catalog: ExecutorCatalog) -> dict[str, Any]:
-    singularity = Path("/usr/bin/singularity")
+    singularity = paths.container_runtime()
     if not singularity.is_file() or not os.access(singularity, os.X_OK):
         raise FileNotFoundError(singularity)
     for spec in catalog_images(catalog):
@@ -166,7 +166,7 @@ def prefetch_images(
     plan: ExecutionPlan,
     catalog: ExecutorCatalog,
 ) -> dict[str, Any]:
-    singularity = Path("/usr/bin/singularity")
+    singularity = paths.container_runtime()
     if not singularity.is_file() or not os.access(singularity, os.X_OK):
         raise FileNotFoundError(singularity)
     for spec in required_images(plan, catalog):

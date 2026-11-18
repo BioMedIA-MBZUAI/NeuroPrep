@@ -50,7 +50,7 @@ def preflight_execution_plan(
         else:
             checks.append(PreflightCheck(name=name, status="pass", detail=value))
 
-    singularity = Path("/usr/bin/singularity")
+    singularity = paths.container_runtime()
     singularity_ready = singularity.is_file() and os.access(singularity, os.X_OK)
     checks.append(
         PreflightCheck(

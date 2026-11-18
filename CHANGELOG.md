@@ -20,6 +20,10 @@
 - Optional site TemplateFlow cache: when `$NEUROPREP_TOOLS_ROOT/templateflow` exists, its
   files are copied into every run's TemplateFlow cache, so BIDS Apps need no S3 access at
   run time (on CIAI, TemplateFlow downloads failed with connection resets).
+- `NEUROPREP_CONTAINER_RUNTIME` selects the Singularity or Apptainer executable;
+  otherwise `singularity`, then `apptainer`, is found on `PATH`. Executor commands
+  use a `{container_runtime}` placeholder instead of `/usr/bin/singularity`.
+- Python 3.13 support (tested: full suite passes on 3.11, 3.12 and 3.13).
 - `neuroprep-agentic --version`.
 - `runtime-check` reports the configured LLM provider; hosted providers are
   checked for credentials without spending tokens.

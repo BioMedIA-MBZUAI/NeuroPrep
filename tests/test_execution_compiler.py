@@ -320,3 +320,12 @@ def test_every_executor_compiles_in_one_dataset_agnostic_dag(nfs_tmp: Path) -> N
     assert any(task.executor_id == "fsl-mrs" for task in plan.tasks)
     assert any(task.executor_id == "neuroprep-ultrasound" for task in plan.tasks)
     assert any(task.executor_id == "neuroprep-angio" for task in plan.tasks)
+
+
+def test_container_commands_use_the_configured_runtime(monkeypatch, nfs_tmp: Path) -> None:
+    monkeypatch.setenv("NEUROPREP_CONTAINER_RUNTIME", "/opt/apptainer/bin/apptainer")
+    plan = _compile(nfs_tmp)
+    container_tasks = [t for t in plan.tasks if t.executor_id in {"smriprep", "fmriprep"}]
+    assert container_tasks
+    assert {t.command[0] for t in container_tasks} == {"/opt/apptainer/bin/apptainer"}
+    assert not any("/usr/bin/singularity" in part for t in plan.tasks for part in t.command)

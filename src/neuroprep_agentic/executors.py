@@ -116,7 +116,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/smriprep-0.19.1.sif",
             image_source="docker://nipreps/smriprep:0.19.1",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--cleanenv",
                 "--containall",
@@ -167,7 +167,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/deepprep-25.1.0.sif",
             image_source="docker://pbfslab/deepprep:25.1.0",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--nv",
                 "--network",
@@ -254,7 +254,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/fmriprep-25.2.5.sif",
             image_source="docker://nipreps/fmriprep:25.2.5",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--cleanenv",
                 "--containall",
@@ -308,7 +308,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/xcpd-26.1.1.sif",
             image_source="docker://pennlinc/xcp_d:26.1.1",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--cleanenv",
                 "--containall",
@@ -359,7 +359,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/qsiprep-26.0.0.sif",
             image_source="docker://pennlinc/qsiprep:26.0.0",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "exec",
                 "--cleanenv",
                 "--containall",
@@ -440,7 +440,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/qsiprep-26.0.0.sif",
             image_source="docker://pennlinc/qsiprep:26.0.0",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "exec",
                 "--cleanenv",
                 "--containall",
@@ -493,7 +493,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/qsiprep-26.0.0.sif",
             image_source="docker://pennlinc/qsiprep:26.0.0",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--nv",
                 "--cleanenv",
@@ -564,7 +564,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/qsirecon-1.1.1.sif",
             image_source="docker://pennlinc/qsirecon:1.1.1",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--cleanenv",
                 "--containall",
@@ -628,7 +628,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/aslprep-26.0.3.sif",
             image_source="docker://pennlinc/aslprep:26.0.3",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--cleanenv",
                 "--containall",
@@ -691,7 +691,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
             image="{container_root}/petprep-0.0.8.sif",
             image_source="docker://nipreps/petprep:0.0.8",
             command=(
-                "/usr/bin/singularity",
+                "{container_runtime}",
                 "run",
                 "--cleanenv",
                 "--containall",

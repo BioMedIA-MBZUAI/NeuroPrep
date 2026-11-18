@@ -87,6 +87,7 @@ def _format_values(
         "agentic_project": layout.agentic_project,
         "neuroprep_project": layout.neuroprep_project,
         "container_root": layout.container_root,
+        "container_runtime": str(paths.container_runtime()),
         "agentic_python": sys.executable,
         "agentic_resources": str(paths.package_resources()),
         "subject": (subject_id or "dataset").removeprefix("sub-"),

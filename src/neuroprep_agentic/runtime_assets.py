@@ -186,7 +186,7 @@ def _valid_aslprep_patches(plan: ExecutionPlan) -> bool:
 def _extract_container_text(image: Path, source: str) -> str:
     completed = subprocess.run(
         [
-            "/usr/bin/singularity",
+            str(paths.container_runtime()),
             "exec",
             "--cleanenv",
             str(image),

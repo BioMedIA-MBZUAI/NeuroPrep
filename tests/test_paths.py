@@ -74,3 +74,15 @@ def test_bundled_resources_ship_with_the_package():
     resources = paths.package_resources()
     for name in ("eddy_cuda10.2", "petprep_sitecustomize.py", "petprep_nfs_linear.yaml"):
         assert (resources / name).is_file(), name
+
+
+def test_container_runtime_is_configurable(monkeypatch, tmp_path):
+    runtime = tmp_path / "bin" / "apptainer"
+    monkeypatch.setenv("NEUROPREP_CONTAINER_RUNTIME", str(runtime))
+    assert paths.container_runtime() == runtime
+    monkeypatch.delenv("NEUROPREP_CONTAINER_RUNTIME")
+    monkeypatch.setenv("PATH", str(runtime.parent))
+    runtime.parent.mkdir()
+    runtime.write_text("#!/bin/sh\n")
+    runtime.chmod(0o755)
+    assert paths.container_runtime() == runtime.resolve()
