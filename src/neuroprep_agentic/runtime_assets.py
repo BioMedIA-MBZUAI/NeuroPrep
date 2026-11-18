@@ -22,6 +22,8 @@ NEXTFLOW_SEED = (
 
 # Site TemplateFlow cache copied into every run, so containers need no S3 access at run time.
 TEMPLATEFLOW_SEED = paths.tools_root() / "templateflow"
+TOTALSEG_IMAGE_NAME = "totalsegmentator-2.18.0.sif"
+TOTALSEG_MARKER = ".neuroprep-weights-total"
 
 ASLPREP_PATCH_VERSION = "26.0.3-neuroprep-2"
 ASLPREP_IMAGE_NAME = "aslprep-26.0.3.sif"
@@ -115,6 +117,49 @@ def _needs_aslprep_patches(plan: ExecutionPlan) -> bool:
         task.executor_id == "aslprep" and plan.runs(task)
         for task in plan.tasks
     )
+
+
+def _needs_totalsegmentator(plan: ExecutionPlan) -> bool:
+    return any(
+        task.executor_id == "totalsegmentator" and plan.runs(task) for task in plan.tasks
+    )
+
+
+def totalsegmentator_home(plan: ExecutionPlan) -> Path:
+    return Path(plan.layout.work_root) / "cache" / "totalsegmentator"
+
+
+def _valid_totalsegmentator(home: Path) -> bool:
+    return (home / TOTALSEG_MARKER).is_file()
+
+
+def _prepare_totalsegmentator(plan: ExecutionPlan) -> None:
+    """Download the free `total` task weights once into the run cache all tasks bind."""
+    image = validated_cluster_path(
+        str(Path(plan.layout.container_root) / TOTALSEG_IMAGE_NAME), must_exist=True
+    )
+    home = validated_cluster_path(str(totalsegmentator_home(plan)))
+    home.mkdir(parents=True, exist_ok=True)
+    environment = dict(os.environ)
+    for prefix in ("SINGULARITYENV_", "APPTAINERENV_"):
+        environment[prefix + "TOTALSEG_HOME_DIR"] = "/totalseg-home"
+    subprocess.run(
+        [
+            str(paths.container_runtime()),
+            "exec",
+            "--cleanenv",
+            "--containall",
+            "--bind",
+            f"{home}:/totalseg-home",
+            str(image),
+            "totalseg_download_weights",
+            "-t",
+            "total",
+        ],
+        check=True,
+        env=environment,
+    )
+    (home / TOTALSEG_MARKER).write_text("total\n", encoding="utf-8")
 
 
 def nextflow_destination(plan: ExecutionPlan) -> Path:
@@ -272,6 +317,15 @@ def runtime_asset_inventory(plan: ExecutionPlan) -> dict[str, Any]:
                 "expected_sha256": ASLPREP_TEMPLATEFLOW_TRANSFORM_SHA256,
             }
         )
+    if _needs_totalsegmentator(plan):
+        home = validated_cluster_path(str(totalsegmentator_home(plan)))
+        assets.append(
+            {
+                "asset_id": "totalsegmentator-total-weights",
+                "path": str(home),
+                "ready": _valid_totalsegmentator(home),
+            }
+        )
     return {"ready": all(item["ready"] for item in assets), "assets": assets}
 
 
@@ -299,6 +353,10 @@ def seed_templateflow(plan: ExecutionPlan) -> Path | None:
 
 def prepare_runtime_assets(plan: ExecutionPlan) -> dict[str, Any]:
     seed_templateflow(plan)
+    if _needs_totalsegmentator(plan) and not _valid_totalsegmentator(
+        totalsegmentator_home(plan)
+    ):
+        _prepare_totalsegmentator(plan)
     if _needs_nextflow(plan):
         seed = validated_cluster_path(str(NEXTFLOW_SEED), must_exist=True)
         if not _valid_nextflow(seed):

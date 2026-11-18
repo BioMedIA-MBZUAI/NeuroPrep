@@ -79,5 +79,15 @@
   exist on Docker Hub; it is now `3.0.1`. The executor catalog digest changes.
 - The CT and EEG backend portfolio entries named executors that do not exist
   (`neuroprep-ct`, `neuroprep-eeg`), so those capabilities never got a decision.
+- Signed evidence rejected any backend whose command names the subject's own input file
+  (SynthSeg, TotalSegmentator): staged file names carry a per-acquisition hash, so two
+  subjects looked like two different commands.
+- ASL staging ignored the dataset's `aslcontext.tsv` and inferred the volume order,
+  which fails for series with several M0 volumes (OpenNeuro ds000240); the source
+  context is now kept and checked against the image.
+- TotalSegmentator read weights from `/root`, which is not readable under Singularity;
+  `prepare-assets` now downloads the free `total` weights once into the run cache.
+- A backend's optional stages (QSIRecon tractography) were treated as mandatory, so
+  MRtrix3 could never replace QSIPrep for a tensor-only request.
 - Settings rejected every model that was not `ollama/...`.
 - The review crew could not use Claude without the `crewai[anthropic]` extra.

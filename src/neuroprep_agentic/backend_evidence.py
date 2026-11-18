@@ -456,6 +456,22 @@ def _normalize_value(value: str, plan: dict[str, Any], task: dict[str, Any]) -> 
     for key, raw in plan.get("layout", {}).items():
         if isinstance(raw, str) and raw.startswith("/"):
             replacements.append((raw, "{" + key + "}"))
+    # Per-subject input files ({primary_t1w}, {bids_input}, {acquisition}) differ by name
+    # between subjects; fold them back to their placeholders, like subject labels.
+    metadata = task.get("metadata", {})
+    bids_root = plan.get("layout", {}).get("bids_root")
+    inputs = metadata.get("bids_inputs", [])
+    for key, raw in (
+        ("primary_t1w", metadata.get("primary_anatomical_bids_input")),
+        ("bids_input", inputs[0] if len(inputs) == 1 else None),
+    ):
+        if raw and bids_root:
+            relative = os.path.relpath(str(raw), str(bids_root))
+            replacements.append(("/source-data/" + relative, "{" + key + "}"))
+    acquisitions = task.get("acquisition_ids", [])
+    if acquisitions:
+        label = re.sub(r"[^A-Za-z0-9_.-]+", "-", acquisitions[0]).strip("-")
+        replacements.append((label, "{acquisition}"))
     rendered = value
     for source, target in sorted(replacements, key=lambda item: len(item[0]), reverse=True):
         rendered = rendered.replace(source, target)

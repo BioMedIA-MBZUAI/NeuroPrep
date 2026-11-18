@@ -338,7 +338,7 @@ def test_every_executor_compiles_in_one_dataset_agnostic_dag(nfs_tmp: Path) -> N
     assert not totalseg.required and totalseg.metadata["qualification_candidate"] is True
     image = totalseg.command[totalseg.command.index("-i") + 1]
     assert image.startswith("/source-data/sub-all/") and image.endswith(".nii.gz")
-    assert totalseg.environment["TOTALSEG_HOME_DIR"].startswith(totalseg.work_dir)
+    assert totalseg.environment == {"TOTALSEG_HOME_DIR": "/totalseg-home"}
     basil = next(t for t in compared.tasks if t.executor_id == "basil")
     assert basil.command[basil.command.index("--image") + 1].endswith("fsl-6.0.7.18.sif")
     assert any(task.executor_id == "fsl-mrs" for task in plan.tasks)

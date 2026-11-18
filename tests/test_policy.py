@@ -328,3 +328,14 @@ def test_mrtrix3_competes_when_it_takes_over_the_mandatory_tensor_fit() -> None:
     )
     dwi = next(d for d in all_mandatory.decisions if d.capability == "dwi_preprocess")
     assert dwi.rejected_candidates["mrtrix3"] == "qsirecon_needs_qsiprep_dwi"
+
+
+def test_dwi_plugin_leaves_tractography_optional_so_mrtrix3_can_compete() -> None:
+    from neuroprep_agentic.plugins.modalities import builtin_modality_plugins
+
+    dwi = next(p for p in builtin_modality_plugins() if p.plugin_id == "mri.dwi")
+    mandatory = {"anat_preprocess"} | {t.stage for t in dwi.tasks if t.required}
+    plan = plan_backends(
+        RunPolicy(), _gpu(), required_executor_ids=DWI_PLAN, mandatory_stages=mandatory
+    )
+    assert "smoke--dwi_preprocess--mrtrix3" in {t.test_id for t in plan.smoke_tests}

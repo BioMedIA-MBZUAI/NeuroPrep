@@ -63,3 +63,24 @@ def test_refuses_without_m0_or_known_labeling():
         oxford_asl_arguments(PCASL, ["label", "control"])
     with pytest.raises(ValueError, match="ArterialSpinLabelingType"):
         oxford_asl_arguments({**PCASL, "ArterialSpinLabelingType": "VSASL"}, ["m0scan", "label"])
+
+
+def test_staging_keeps_source_aslcontext_with_several_m0_volumes(tmp_path) -> None:
+    import nibabel as nib
+    import numpy as np
+
+    from neuroprep_agentic.native import _copy_asl_context
+
+    types = ["m0scan"] * 3 + ["control", "label"] * 4
+    source = tmp_path / "src" / "sub-01_asl.nii.gz"
+    source.parent.mkdir()
+    nib.save(nib.Nifti1Image(np.zeros((2, 2, 2, len(types))), np.eye(4)), source)
+    (source.parent / "sub-01_aslcontext.tsv").write_text("volume_type\n" + "\n".join(types) + "\n")
+    target = tmp_path / "bids" / "sub-x_acq-y_asl.nii.gz"
+    target.parent.mkdir()
+    target.write_bytes(source.read_bytes())
+
+    context = _copy_asl_context(source, target)
+
+    assert context["pairs"] == 4 and context["volumes"] == 11
+    assert (target.parent / "sub-x_acq-y_aslcontext.tsv").read_text().split()[1:] == types

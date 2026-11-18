@@ -164,3 +164,26 @@ def test_templateflow_seed_is_copied_without_overwriting(monkeypatch, nfs_tmp: P
 def test_templateflow_seed_is_optional(monkeypatch, nfs_tmp: Path) -> None:
     monkeypatch.setattr(runtime_assets, "TEMPLATEFLOW_SEED", nfs_tmp / "absent")
     assert runtime_assets.seed_templateflow(_plan(nfs_tmp, with_deepprep=False)) is None
+
+
+def test_totalsegmentator_weights_download_once_into_the_run_cache(
+    monkeypatch, nfs_tmp: Path
+) -> None:
+    plan = _plan(nfs_tmp, with_deepprep=False)
+    plan.layout.container_root = str(nfs_tmp / "containers")
+    template = _plan(nfs_tmp).tasks[0]
+    plan.tasks.append(
+        template.model_copy(update={"task_id": "ts", "executor_id": "totalsegmentator"})
+    )
+    image = Path(plan.layout.container_root) / runtime_assets.TOTALSEG_IMAGE_NAME
+    image.parent.mkdir(parents=True, exist_ok=True)
+    image.touch()
+    calls = []
+    monkeypatch.setattr(runtime_assets.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+
+    assert runtime_assets.runtime_asset_inventory(plan)["ready"] is False
+    assert runtime_assets.prepare_runtime_assets(plan)["ready"] is True
+    runtime_assets.prepare_runtime_assets(plan)
+
+    assert len(calls) == 1 and calls[0][-3:] == ["totalseg_download_weights", "-t", "total"]
+    assert f"{runtime_assets.totalsegmentator_home(plan)}:/totalseg-home" in calls[0]

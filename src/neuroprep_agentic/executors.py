@@ -444,7 +444,7 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "--bind",
                 "{derivatives_root}:/out",
                 "--bind",
-                "{task_work_dir}:/task",
+                "{work_root}/cache/totalsegmentator:/totalseg-home",
                 "{image}",
                 "TotalSegmentator",
                 "-i",
@@ -461,10 +461,8 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                 "gpu",
                 "--statistics",
             ),
-            environment={
-                "TOTALSEG_HOME_DIR": "{task_work_dir}/totalseg-home",
-                "TOTALSEG_WEIGHTS_PATH": "/root/.totalsegmentator/nnunet/results",
-            },
+            # Weights are fetched once per run by prepare-assets (runtime_assets.py).
+            environment={"TOTALSEG_HOME_DIR": "/totalseg-home"},
             artifacts=(
                 artifact(
                     "ct_segmentation",

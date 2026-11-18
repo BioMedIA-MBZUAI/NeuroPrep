@@ -174,10 +174,40 @@ def stage_bids(task: ExecutableTask) -> dict[str, Any]:
         "sha256": _sha256(target),
     }
     if plugin_id == "mri.asl":
-        result["asl_context"] = _derive_asl_context(target, sidecar)
+        result["asl_context"] = _copy_asl_context(source, target) or _derive_asl_context(
+            target, sidecar
+        )
         sidecar["TotalAcquiredPairs"] = result["asl_context"]["pairs"]
         _write_json(_sidecar_path(target), sidecar)
     return result
+
+
+def _copy_asl_context(source: Path, target: Path) -> dict[str, Any] | None:
+    """Keep a BIDS source's own aslcontext.tsv; derivation assumes at most one M0."""
+    source_stem = source.name[:-7] if source.name.endswith(".nii.gz") else source.stem
+    target_stem = target.name[:-7] if target.name.endswith(".nii.gz") else target.stem
+    if not (source_stem.endswith("_asl") and target_stem.endswith("_asl")):
+        return None
+    candidate = source.with_name(source_stem[:-4] + "_aslcontext.tsv")
+    if not candidate.is_file():
+        return None
+    rows = candidate.read_text(encoding="utf-8").split()
+    if not rows or rows[0] != "volume_type":
+        raise ValueError(f"aslcontext.tsv lacks a volume_type header: {candidate}")
+    types = rows[1:]
+    import nibabel as nib
+
+    volume_count = nib.load(target).shape[-1]
+    if len(types) != volume_count:
+        raise ValueError(f"{candidate} lists {len(types)} volumes; image has {volume_count}")
+    context = target.with_name(target_stem[:-4] + "_aslcontext.tsv")
+    _atomic_copy(candidate, context)
+    return {
+        "path": str(context),
+        "volumes": volume_count,
+        "pairs": min(types.count("label"), types.count("control")),
+        "source": str(candidate),
+    }
 
 
 def _derive_asl_context(target: Path, metadata: dict[str, Any]) -> dict[str, Any]:

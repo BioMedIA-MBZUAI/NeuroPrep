@@ -612,3 +612,23 @@ def test_execution_gate_allows_a_losing_alternative_but_not_a_failed_selection()
     assert not evidence_allows_execution(tests, binding)  # legacy rule: all must pass
     undecided = binding.model_copy(update={"failed_test_ids": []})
     assert not evidence_allows_execution(tests, undecided, {"deepprep"})
+
+
+def test_signature_folds_per_subject_input_file_names() -> None:
+    from neuroprep_agentic.backend_evidence import executor_signature
+
+    def task(subject: str, acq: str) -> dict:
+        t1 = f"/data/bids/{subject}/anat/{subject}_acq-{acq[:8]}_T1w.nii.gz"
+        return {
+            "executor_id": "synthseg",
+            "subject_id": subject,
+            "acquisition_ids": [f"acq-{acq}"],
+            "command": ["mri_synthseg", "--i", "/source-data" + t1.removeprefix("/data/bids")],
+            "metadata": {"primary_anatomical_bids_input": t1, "bids_inputs": [t1]},
+        }
+
+    plan = {
+        "layout": {"bids_root": "/data/bids"},
+        "tasks": [task("sub-aa", "1111111122"), task("sub-bb", "3333333344")],
+    }
+    executor_signature(plan, "synthseg")  # raises if the two subjects differ
