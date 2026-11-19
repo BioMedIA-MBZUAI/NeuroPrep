@@ -199,6 +199,10 @@ def test_chat_asks_for_missing_or_unusable_data_instead_of_failing(nfs_tmp) -> N
         runs.start({"request": f"Preprocess T1w; save outputs to {nfs_tmp / 'out'}."})
     assert asked.value.field == "source_root"
 
+    with pytest.raises(interface.NeedsInput) as asked:
+        runs.start({"request": "Preprocess T1w. My data is at /forbidden/study."})
+    assert asked.value.bad_path == "/forbidden/study" and "not allowed" in asked.value.question
+
     missing = nfs_tmp / "nowhere"
     with pytest.raises(interface.NeedsInput) as asked:
         runs.start({"request": f"Preprocess T1w. My data is at {missing}."})

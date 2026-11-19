@@ -134,6 +134,25 @@ _ASK_SOURCE = (
 )
 
 
+# Any absolute path, also outside the allowed roots (the prompt parser ignores those),
+# so the chat can say which path it cannot use instead of asking a generic question.
+_ANY_PATH = r"/[^\s\"'<>]+"
+_ANY_SOURCE_RE = re.compile(
+    rf"(?:data|input|source)(?:\s+(?:is|are|located))?(?:\s+(?:at|in|under|from))?\s+"
+    rf"(?P<path>{_ANY_PATH})",
+    re.IGNORECASE,
+)
+_ANY_OUTPUT_RE = re.compile(
+    rf"(?:save|write|store|output)(?:[^.\n]{{0,240}}?)(?:to|under|in|at)\s+(?P<path>{_ANY_PATH})",
+    re.IGNORECASE,
+)
+
+
+def _outside_path(text: str, pattern: re.Pattern[str]) -> str | None:
+    match = pattern.search(text)
+    return match.group("path").rstrip(".,;:!?)]}") if match else None
+
+
 def _roots() -> str:
     return ", ".join(str(root) for root in paths.allowed_roots())
 
@@ -155,7 +174,24 @@ def _resolve_chat_paths(text: str, uploaded: Path | None) -> tuple[Any, bool]:
             "message to use the attached files, or remove the attachment.",
         ) from error
     if not typed_source:
+        outside = _outside_path(text, _ANY_SOURCE_RE)
+        if outside:
+            raise NeedsInput(
+                "source_root",
+                f"I'm not allowed to read {outside}: data must be under {_roots()}. "
+                "Give a folder there, or attach the files.",
+                outside,
+            )
         raise NeedsInput("source_root", _ASK_SOURCE)
+    if not typed_output:
+        outside = _outside_path(text, _ANY_OUTPUT_RE)
+        if outside:
+            raise NeedsInput(
+                "output_root",
+                f"I can't save to {outside}: results must go under {_roots()}. Which folder "
+                "there should I use? (Or remove it to save to a new default folder.)",
+                outside,
+            )
     typed = None if uploaded else typed_source
     source = Path(typed_source).expanduser()
     _check_source(source, typed)
