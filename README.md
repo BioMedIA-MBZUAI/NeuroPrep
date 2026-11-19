@@ -275,6 +275,13 @@ original request. Choose how to run it:
   stop at the production plan.
 - **submit to Slurm** (`--execute slurm`): submit the production workers.
 
+Each run in the chat links to a live dashboard (`/dashboard?run=<id>`): the stage
+tracker, task counts, a timeline of every task (tool × subject, pilot and production,
+coloured by status and growing while it runs), the live log of the running task (or
+any task you click), GPU utilisation and memory, CPU load and RAM sampled every 5 s
+on the serving node, and the pilot runtime of each compared tool with the one chosen.
+It reads the run's own task database read-only and refreshes every 3 s.
+
 Each request starts one `auto` process; the page shows its stages as they finish,
 the backends chosen, the log tail and, at the end, the released files from
 `derivatives/release/model-ready-index.jsonl`. The process log is written next to

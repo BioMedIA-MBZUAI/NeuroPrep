@@ -286,3 +286,61 @@ def test_chat_saves_to_the_default_output_root_when_the_prompt_names_none(
     assert output.parent == nfs_tmp / "runs" and output.name.startswith("ds000102-")
     assert run["default_output"] is True
     assert commands[0][commands[0].index("--output-root") + 1] == str(output)
+
+
+def test_dashboard_reads_live_task_state_logs_and_metrics(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp
+) -> None:
+    import sqlite3
+
+    from neuroprep_agentic.state import RunState
+
+    output = nfs_tmp / "run"
+    database = Path(f"{output}.neuroprep-qualification") / "pilot" / "state" / "tasks.sqlite"
+    database.parent.mkdir(parents=True)
+    log = nfs_tmp / "smriprep.log"
+    log.write_text("line 1\nline 2\n")
+    connection = sqlite3.connect(database)
+    RunState._schema(connection)
+    spec = json.dumps({"subject_id": "sub-01", "stages": ["anat_preprocess"], "metadata": {}})
+    connection.executemany(
+        "INSERT INTO tasks(task_id,status,executor_id,resource_class,required,fingerprint,"
+        "task_json,attempts,updated_at,log_path) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("t-bids", "complete", "bids-validator", "cpu", 1, "f", "{}", 1, "now", None),
+            ("t-smri", "running", "smriprep", "cpu", 1, "f", spec, 1, "now", str(log)),
+        ],
+    )
+    connection.executemany(
+        "INSERT INTO attempts(task_id,attempt,worker_id,status,started_at,finished_at)"
+        " VALUES (?,?,?,?,?,?)",
+        [
+            ("t-bids", 1, "w", "complete", "2026-11-19T06:00:00Z", "2026-11-19T06:00:02Z"),
+            ("t-smri", 1, "w", "running", "2026-11-19T06:00:03+00:00", None),
+        ],
+    )
+    connection.execute("INSERT INTO dependencies(task_id,depends_on) VALUES ('t-smri','t-bids')")
+    connection.commit()
+    connection.close()
+
+    class Running:
+        def poll(self):
+            return None
+
+    runs = interface.AutoRuns(None)
+    runs._runs["r1"] = {
+        "run_id": "r1", "request": "x", "run_root": str(output),
+        "log_path": str(nfs_tmp / "run.chat-run.log"), "process": Running(),
+    }
+    phases = runs.tasks("r1")["phases"]
+    assert [p["phase"] for p in phases] == ["pilot"]  # production has not started
+    smriprep = next(t for t in phases[0]["tasks"] if t["executor_id"] == "smriprep")
+    assert smriprep["status"] == "running" and smriprep["subject_id"] == "sub-01"
+    assert smriprep["started_at"] and smriprep["finished_at"] is None
+    assert smriprep["depends_on"] == ["t-bids"]
+    assert runs.task_log("r1", "pilot", "t-smri")["log"] == "line 1\nline 2"
+    with pytest.raises(KeyError):
+        runs.task_log("r1", "pilot", "not-a-task")
+
+    sample = interface.SystemMetrics.sample()
+    assert "t" in sample and isinstance(sample["gpus"], list)

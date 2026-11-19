@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
+import time
 import uuid
+from collections import deque
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,6 +38,9 @@ _ASSETS = {
     "/chat": ("chat.html", "text/html; charset=utf-8"),
     "/chat.css": ("chat.css", "text/css; charset=utf-8"),
     "/chat.js": ("chat.js", "text/javascript; charset=utf-8"),
+    "/dashboard": ("dashboard.html", "text/html; charset=utf-8"),
+    "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
+    "/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
 }
 _EXECUTE_MODES = ("local", "slurm", "plan-only")
 
@@ -393,10 +401,205 @@ class AutoRuns:
             "outputs": _released_outputs(index),
         }
 
+    def _phases(self, run_id: str) -> list[tuple[str, Path]]:
+        status = self.status(run_id)
+        root = Path(status["run_root"])
+        return [
+            ("pilot", qualification_root(root) / "pilot" / "state" / "tasks.sqlite"),
+            ("production", root / "state" / "tasks.sqlite"),
+        ]
+
+    def tasks(self, run_id: str) -> dict[str, Any]:
+        """Every task of the pilot and production runs, with attempt times, for the timeline."""
+
+        phases = []
+        for phase, database in self._phases(run_id):
+            rows = _read_tasks(database)
+            if rows is not None:
+                phases.append({"phase": phase, "tasks": rows})
+        return {"now": _utc_now(), "phases": phases}
+
+    def task_log(self, run_id: str, phase: str, task_id: str, lines: int = 300) -> dict[str, Any]:
+        """Tail of one task's log; the path comes from the run's own task database."""
+
+        if phase == "run":
+            return {"log": _tail(Path(self.status(run_id)["log_path"]), lines)}
+        database = dict(self._phases(run_id)).get(phase)
+        if database is None:
+            raise KeyError(phase)
+        for row in _read_tasks(database) or []:
+            if row["task_id"] == task_id:
+                log = row.get("log_path")
+                return {"log": _tail(Path(log), lines) if log else "", "path": log}
+        raise KeyError(task_id)
+
     def list(self) -> list[dict[str, Any]]:
         with self._lock:
             ids = list(self._runs)
         return [self.status(run_id) for run_id in ids]
+
+
+def _utc_now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _read_tasks(database: Path) -> list[dict[str, Any]] | None:
+    """Read-only snapshot of a run's task table; None until the run creates it."""
+
+    if not database.is_file():
+        return None
+    try:
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error:
+        return None
+    try:
+        tasks = connection.execute(
+            "SELECT task_id, status, executor_id, resource_class, required, attempts,"
+            " return_code, last_error, log_path, task_json, updated_at FROM tasks"
+        ).fetchall()
+        attempts = connection.execute(
+            "SELECT task_id, MIN(started_at), MAX(started_at), MAX(finished_at) "
+            "FROM attempts GROUP BY task_id"
+        ).fetchall()
+        deps = connection.execute("SELECT task_id, depends_on FROM dependencies").fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        connection.close()
+    times = {row[0]: row[1:] for row in attempts}
+    needs: dict[str, list[str]] = {}
+    for child, parent in deps:
+        needs.setdefault(child, []).append(parent)
+    rows = []
+    for row_values in tasks:
+        task_id, status, executor, resource, required, tries, code, error, log, raw, updated = (
+            row_values
+        )
+        try:
+            spec = json.loads(raw)
+        except ValueError:
+            spec = {}
+        first, last_start, finished = times.get(task_id, (None, None, None))
+        rows.append(
+            {
+                "task_id": task_id,
+                "status": status,
+                "executor_id": executor,
+                "resource_class": resource,
+                "required": bool(required),
+                "attempts": tries,
+                "return_code": code,
+                "error": (error or "")[:500],
+                "log_path": log,
+                "subject_id": spec.get("subject_id"),
+                "session_id": spec.get("session_id"),
+                "stages": spec.get("stages", []),
+                "candidate": bool((spec.get("metadata") or {}).get("qualification_candidate")),
+                "started_at": first,
+                "last_started_at": last_start,
+                "finished_at": finished if status in {"complete", "failed"} else None,
+                "updated_at": updated,
+                "depends_on": needs.get(task_id, []),
+            }
+        )
+    rows.sort(key=lambda row: (row["started_at"] or "9999", row["task_id"]))
+    return rows
+
+
+class SystemMetrics:
+    """GPU, CPU and memory samples every few seconds, kept for the last hour."""
+
+    def __init__(self, interval: float = 5.0, keep: int = 720) -> None:
+        self.interval = interval
+        self.samples: deque[dict[str, Any]] = deque(maxlen=keep)
+        self._lock = threading.Lock()
+        self._started = False
+
+    def start(self) -> None:
+        if self._started:
+            return
+        self._started = True
+        threading.Thread(target=self._loop, daemon=True, name="neuroprep-metrics").start()
+
+    def _loop(self) -> None:
+        while True:
+            sample = self.sample()
+            with self._lock:
+                self.samples.append(sample)
+            time.sleep(self.interval)
+
+    @staticmethod
+    def sample() -> dict[str, Any]:
+        sample: dict[str, Any] = {"t": time.time()}
+        cpus = os.cpu_count() or 1
+        with contextlib.suppress(OSError):
+            sample["cpu_load_pct"] = round(100 * os.getloadavg()[0] / cpus, 1)
+        memory = _meminfo()
+        if memory:
+            total, available = memory
+            sample["mem_used_gb"] = round((total - available) / 1024**2, 2)
+            sample["mem_total_gb"] = round(total / 1024**2, 2)
+        sample["gpus"] = _gpu_stats()
+        return sample
+
+    def history(self, since: float = 0.0) -> list[dict[str, Any]]:
+        with self._lock:
+            return [item for item in self.samples if item["t"] > since]
+
+
+def _meminfo() -> tuple[int, int] | None:
+    """Total and available memory in kB from /proc/meminfo (Linux), else None."""
+
+    try:
+        values = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, _, rest = line.partition(":")
+            values[key] = int(rest.split()[0])
+        return values["MemTotal"], values["MemAvailable"]
+    except (OSError, KeyError, ValueError, IndexError):
+        return None
+
+
+def _gpu_stats() -> list[dict[str, Any]]:
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return []
+    try:
+        output = subprocess.run(  # noqa: S603 - fixed argv
+            [
+                smi,
+                "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,"
+                "temperature.gpu,power.draw",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    gpus = []
+    for line in output.strip().splitlines():
+        fields = [field.strip() for field in line.split(",")]
+        if len(fields) < 7:
+            continue
+
+        def number(value: str) -> float | None:
+            try:
+                return float(value)
+            except ValueError:
+                return None
+
+        gpus.append(
+            {
+                "index": fields[0],
+                "name": fields[1],
+                "util_pct": number(fields[2]),
+                "mem_used_gb": round((number(fields[3]) or 0) / 1024, 2),
+                "mem_total_gb": round((number(fields[4]) or 0) / 1024, 2),
+                "temp_c": number(fields[5]),
+                "power_w": number(fields[6]),
+            }
+        )
+    return gpus
 
 
 def _read_json(path: Path) -> Any:
@@ -449,6 +652,8 @@ class _InterfaceServer(ThreadingHTTPServer):
         super().__init__(address, _InterfaceHandler)
         self.agentic_project = agentic_project
         self.runs = AutoRuns(agentic_project)
+        self.metrics = SystemMetrics()
+        self.metrics.start()
 
 
 class _InterfaceHandler(BaseHTTPRequestHandler):
@@ -496,11 +701,32 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
         if path == "/api/runs":
             self._json(HTTPStatus.OK, {"runs": self.server.runs.list()})
             return
-        if path.startswith("/api/runs/"):
+        if path == "/api/metrics":
+            query = parse_qs(urlsplit(self.path).query)
             try:
-                self._json(HTTPStatus.OK, self.server.runs.status(path.removeprefix("/api/runs/")))
+                since = float(query.get("since", ["0"])[0])
+            except ValueError:
+                since = 0.0
+            self._json(HTTPStatus.OK, {"samples": self.server.metrics.history(since)})
+            return
+        if path.startswith("/api/runs/"):
+            parts = path.removeprefix("/api/runs/").split("/")
+            query = parse_qs(urlsplit(self.path).query)
+            try:
+                if len(parts) == 1:
+                    payload = self.server.runs.status(parts[0])
+                elif parts[1:] == ["tasks"]:
+                    payload = self.server.runs.tasks(parts[0])
+                elif parts[1:] == ["log"]:
+                    payload = self.server.runs.task_log(
+                        parts[0], query.get("phase", ["run"])[0], query.get("task", [""])[0]
+                    )
+                else:
+                    raise KeyError(path)
             except KeyError:
-                self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown run"})
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown run or task"})
+                return
+            self._json(HTTPStatus.OK, payload)
             return
         asset = _ASSETS.get(path)
         if asset is None:

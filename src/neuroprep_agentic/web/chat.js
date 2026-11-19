@@ -58,7 +58,8 @@ function renderRun(run) {
   const stages = report.stages || {};
   const outcome = report.outcome ? ` · ${report.outcome}` : "";
   bubble.append(
-    el("p", {}, el("span", { class: `state ${run.state}` }, run.state), ` ${run.execute}${outcome}`),
+    el("p", {}, el("span", { class: `state ${run.state}` }, run.state), ` ${run.execute}${outcome} · `,
+      el("a", { href: `/dashboard?run=${run.run_id}`, target: "_blank", rel: "noopener" }, "Open live dashboard ↗")),
     el("p", { class: "meta" }, run.moved_from
       ? `${run.moved_from} was already used, so results go to: ${run.run_root}`
       : run.default_output

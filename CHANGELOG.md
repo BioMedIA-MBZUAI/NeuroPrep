@@ -57,6 +57,9 @@
   input or output becomes a question in the chat rather than an error. An output
   folder that an earlier run already used (including its pilot folder) is moved aside
   automatically (`<folder>-2`, ...) and the chat says so.
+- Live run dashboard (`/dashboard?run=<id>`, linked from the chat): stage tracker,
+  task timeline from the run's task database, live task logs, GPU/CPU/RAM charts and
+  the compared tools' pilot runtimes, refreshed every few seconds.
 - `auto` pulls any missing container images for the pilot and production plans
   before preflight instead of stopping with "required images are missing".
 - `neuroprep-agentic --version`.

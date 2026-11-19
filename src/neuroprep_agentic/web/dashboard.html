@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Live view of a NeuroPrep run: stages, tasks, logs and GPU use.">
+    <title>NeuroPrep Run Dashboard</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/dashboard.css">
+    <script src="/dashboard.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/chat" aria-label="Back to chat">
+        <span class="brand-mark" aria-hidden="true">N</span>
+        <span>NeuroPrep</span>
+      </a>
+      <div class="service-state"><span class="pulse" id="live-dot"></span> <span id="live-text">Live</span> · <a href="/chat">Chat</a></div>
+    </header>
+
+    <main class="dash">
+      <section class="run-head">
+        <div>
+          <p class="eyebrow">Run <span id="run-id"></span></p>
+          <h1 id="run-title">Loading…</h1>
+          <p class="meta" id="run-paths"></p>
+        </div>
+        <div class="run-state"><span id="run-state" class="chip">…</span><span id="run-elapsed" class="elapsed"></span></div>
+      </section>
+
+      <ol class="stepper" id="stepper" aria-label="Run stages"></ol>
+
+      <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+      <section class="panel-block">
+        <div class="block-head">
+          <h2>System</h2>
+          <p class="meta" id="system-note">Sampled every 5 s on the node serving this page.</p>
+        </div>
+        <div class="charts" id="charts"></div>
+      </section>
+
+      <section class="panel-block">
+        <div class="block-head">
+          <h2>Tasks</h2>
+          <div class="legend" id="status-legend"></div>
+        </div>
+        <div id="timeline" class="timeline" aria-label="Task timeline"></div>
+        <p class="meta empty" id="timeline-empty">No tasks yet. They appear once the pilot is planned.</p>
+      </section>
+
+      <div class="two-col">
+        <section class="panel-block log-block">
+          <div class="block-head">
+            <h2 id="log-title">Run log</h2>
+            <div class="log-tools">
+              <button type="button" class="text-button" id="log-run">Run log</button>
+              <label><input type="checkbox" id="log-follow" checked> Follow</label>
+            </div>
+          </div>
+          <p class="meta" id="log-path"></p>
+          <pre id="log" class="log" tabindex="0" aria-live="off"></pre>
+        </section>
+
+        <section class="panel-block">
+          <div class="block-head"><h2>Tool choices</h2></div>
+          <div id="choices"><p class="meta">Filled in when the pilot's evidence is signed.</p></div>
+        </section>
+      </div>
+
+      <section class="panel-block" id="outputs-block" hidden>
+        <div class="block-head"><h2>Released files</h2><p class="meta" id="outputs-count"></p></div>
+        <div class="table-wrap"><table class="table" id="outputs"></table></div>
+      </section>
+
+      <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+    </main>
+  </body>
+</html>
