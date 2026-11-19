@@ -95,6 +95,10 @@
   and catalog digests change.
 
 ### Fixed
+- ASLPrep 26.0.3 crashed on Python 3.12 whenever a plot raised a matplotlib warning
+  (`_warn() got an unexpected keyword argument 'skip_file_prefixes'`, seen in
+  `conf_plot` on OpenNeuro ds000240). A third run-time patch makes ASLPrep's
+  `_warn` accept the newer keywords; patch version `26.0.3-neuroprep-3`.
 - Policy compilation failed outright when a model listed packages outside the allowlist
   (seen with qwen3:14b listing nilearn, nipype, scikit-learn). The allowlist now reaches
   the model as a schema enum, and one repair attempt shows the model its validation error.

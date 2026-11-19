@@ -880,6 +880,12 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                     "/app/.pixi/envs/aslprep/lib/python3.12/site-packages/aslprep/"
                     "workflows/base.py:ro"
                 ),
+                "--bind",
+                (
+                    "{work_root}/cache/patches/aslprep-26.0.3/_warnings.py:"
+                    "/app/.pixi/envs/aslprep/lib/python3.12/site-packages/aslprep/"
+                    "_warnings.py:ro"
+                ),
                 "{image}",
                 "/data",
                 "/out/aslprep",

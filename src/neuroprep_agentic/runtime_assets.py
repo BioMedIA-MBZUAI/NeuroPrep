@@ -25,7 +25,7 @@ TEMPLATEFLOW_SEED = paths.tools_root() / "templateflow"
 TOTALSEG_IMAGE_NAME = "totalsegmentator-2.18.0.sif"
 TOTALSEG_MARKER = ".neuroprep-weights-total"
 
-ASLPREP_PATCH_VERSION = "26.0.3-neuroprep-2"
+ASLPREP_PATCH_VERSION = "26.0.3-neuroprep-3"
 ASLPREP_IMAGE_NAME = "aslprep-26.0.3.sif"
 ASLPREP_TEMPLATEFLOW_TRANSFORM_SIZE = 204_735_104
 ASLPREP_TEMPLATEFLOW_TRANSFORM_SHA256 = (
@@ -93,6 +93,19 @@ using the {bcut} modification, as described in {singlepld_pasl_strs[bcut]}.
             ),
         ),
         "Collapse only scalar fields",
+    ),
+    # ASLPrep replaces warnings.warn with a 4-argument _warn; on Python 3.12 matplotlib
+    # passes skip_file_prefixes, so any plot warning crashed the run (conf_plot).
+    "_warnings.py": (
+        "/app/.pixi/envs/aslprep/lib/python3.12/site-packages/aslprep/_warnings.py",
+        (
+            (
+                "def _warn(message, category=None, stacklevel=1, source=None):\n",
+                "def _warn(message, category=None, stacklevel=1, source=None, **_ignored):\n"
+                "    # neuroprep: accept newer warnings.warn keywords (skip_file_prefixes)\n",
+            ),
+        ),
+        "neuroprep: accept newer warnings.warn keywords",
     ),
 }
 

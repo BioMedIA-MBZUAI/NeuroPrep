@@ -104,9 +104,11 @@ def test_aslprep_patches_are_generated_from_the_pinned_image(
 ) -> None:
     cbf_before, cbf_after = runtime_assets.ASLPREP_PATCHES["cbf.py"][1][0]
     base_before, base_after = runtime_assets.ASLPREP_PATCHES["base.py"][1][0]
+    warn_before, warn_after = runtime_assets.ASLPREP_PATCHES["_warnings.py"][1][0]
     sources = {
         runtime_assets.ASLPREP_PATCHES["cbf.py"][0]: "header\n" + cbf_before + "footer\n",
         runtime_assets.ASLPREP_PATCHES["base.py"][0]: "header\n" + base_before + "footer\n",
+        runtime_assets.ASLPREP_PATCHES["_warnings.py"][0]: "header\n" + warn_before + "footer\n",
     }
     image = nfs_tmp / "containers" / runtime_assets.ASLPREP_IMAGE_NAME
     image.parent.mkdir(parents=True)
@@ -139,6 +141,7 @@ def test_aslprep_patches_are_generated_from_the_pinned_image(
     root = runtime_assets.aslprep_patch_root(plan)
     assert cbf_after in (root / "cbf.py").read_text()
     assert base_after in (root / "base.py").read_text()
+    assert warn_after in (root / "_warnings.py").read_text()
     assert (root / "manifest.json").is_file()
     transform = runtime_assets.aslprep_templateflow_transform_destination(plan)
     assert transform.read_bytes() == transform_payload
@@ -187,3 +190,16 @@ def test_totalsegmentator_weights_download_once_into_the_run_cache(
 
     assert len(calls) == 1 and calls[0][-3:] == ["totalseg_download_weights", "-t", "total"]
     assert f"{runtime_assets.totalsegmentator_home(plan)}:/totalseg-home" in calls[0]
+
+
+def test_patched_aslprep_warn_accepts_python312_keywords() -> None:
+    """The patched _warn must take matplotlib's skip_file_prefixes without raising."""
+    source = (
+        "import logging\n"
+        "def _warn(message, category=None, stacklevel=1, source=None):\n"
+        "    logging.getLogger('py.warnings').warning(str(message))\n"
+    )
+    before, after = runtime_assets.ASLPREP_PATCHES["_warnings.py"][1][0]
+    namespace: dict = {}
+    exec(source.replace(before, after), namespace)  # noqa: S102 - fixed test source
+    namespace["_warn"]("identical ylims", UserWarning, skip_file_prefixes=("/x",))
