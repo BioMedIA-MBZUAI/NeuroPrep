@@ -418,6 +418,7 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
 def test_fetch_images_pulls_missing_images_before_preflight(
     monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
 ) -> None:
+    monkeypatch.setenv("NEUROPREP_CONTAINER_ROOT", str(nfs_tmp / "no-images-yet"))
     source = nfs_tmp / "incoming"
     t1w = source / "sub-P001" / "anat" / "sub-P001_T1w.nii.gz"
     t1w.parent.mkdir(parents=True)

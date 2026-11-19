@@ -339,6 +339,9 @@ class AutoRuns:
     reports and outputs stay on disk); persist the table if the server must restart.
     """
 
+    # How `auto` is started; a seam for tests, separate from other subprocess use.
+    launch = staticmethod(subprocess.Popen)
+
     def __init__(self, agentic_project: str | None) -> None:
         self.agentic_project = agentic_project
         self._runs: dict[str, dict[str, Any]] = {}
@@ -363,7 +366,7 @@ class AutoRuns:
         if self.agentic_project:
             command += ["--agentic-project", self.agentic_project]
         with log_path.open("wb") as log:
-            process = subprocess.Popen(  # noqa: S603 - argv list, no shell
+            process = self.launch(  # noqa: S603 - argv list, no shell
                 command, stdout=log, stderr=subprocess.STDOUT, env=dict(os.environ)
             )
         run_id = uuid.uuid4().hex[:12]

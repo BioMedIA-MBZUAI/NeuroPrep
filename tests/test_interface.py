@@ -158,7 +158,7 @@ def test_chat_runs_auto_from_one_prompt_and_reports_released_files(
         commands.append(command)
         return real_popen([sys.executable, "-c", fake_auto, *command[3:]], **kwargs)
 
-    monkeypatch.setattr(interface.subprocess, "Popen", popen)
+    monkeypatch.setattr(interface.AutoRuns, "launch", staticmethod(popen))
     server = interface._InterfaceServer(("127.0.0.1", 0), None)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_port}"
@@ -226,7 +226,9 @@ def test_chat_moves_a_used_output_folder_aside_automatically(
             return 0
 
     monkeypatch.setattr(
-        interface.subprocess, "Popen", lambda command, **kw: commands.append(command) or Done()
+        interface.AutoRuns,
+        "launch",
+        staticmethod(lambda command, **kw: commands.append(command) or Done()),
     )
     runs = interface.AutoRuns(None)
     for name in ("busy", "out"):
@@ -254,7 +256,9 @@ def test_uploaded_folder_becomes_the_source(monkeypatch: pytest.MonkeyPatch, nfs
             return 0
 
     monkeypatch.setattr(
-        interface.subprocess, "Popen", lambda command, **kw: commands.append(command) or Done()
+        interface.AutoRuns,
+        "launch",
+        staticmethod(lambda command, **kw: commands.append(command) or Done()),
     )
     run = interface.AutoRuns(None).start({"request": "Preprocess T1w.", "upload_id": upload})
 
@@ -278,7 +282,9 @@ def test_chat_saves_to_the_default_output_root_when_the_prompt_names_none(
             return 0
 
     monkeypatch.setattr(
-        interface.subprocess, "Popen", lambda command, **kw: commands.append(command) or Done()
+        interface.AutoRuns,
+        "launch",
+        staticmethod(lambda command, **kw: commands.append(command) or Done()),
     )
     run = interface.AutoRuns(None).start({"request": f"Preprocess T1w. My data is at {source}."})
 
