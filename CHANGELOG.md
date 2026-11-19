@@ -54,7 +54,11 @@
   and the log, and lists the released files when the run finishes. Data can be
   attached (folder or files) instead of named by path; the output folder is optional
   (`NEUROPREP_OUTPUT_ROOT`, default `$NEUROPREP_HOME/runs`); a missing or unusable
-  input or output becomes a question in the chat rather than an error.
+  input or output becomes a question in the chat rather than an error. An output
+  folder that an earlier run already used (including its pilot folder) is moved aside
+  automatically (`<folder>-2`, ...) and the chat says so.
+- `auto` pulls any missing container images for the pilot and production plans
+  before preflight instead of stopping with "required images are missing".
 - `neuroprep-agentic --version`.
 - `runtime-check` reports the configured LLM provider; hosted providers are
   checked for credentials without spending tokens.

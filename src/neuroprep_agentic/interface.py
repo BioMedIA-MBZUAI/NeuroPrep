@@ -157,7 +157,9 @@ def _roots() -> str:
     return ", ".join(str(root) for root in paths.allowed_roots())
 
 
-def _resolve_chat_paths(text: str, uploaded: Path | None) -> tuple[Any, bool]:
+def _resolve_chat_paths(
+    text: str, uploaded: Path | None
+) -> tuple[Any, bool, str, str | None]:
     """Paths from the request, checked one by one so a problem becomes a question.
 
     A request without an output folder gets a new one under the output root.
@@ -203,8 +205,31 @@ def _resolve_chat_paths(text: str, uploaded: Path | None) -> tuple[Any, bool]:
     else:
         output = Path(str(typed_output)).expanduser()
     _check_output(output, None if default_output else typed_output, source)
-    binding = resolve_prompt_paths(text, source_root=str(source), output_root=str(output))
-    return binding, default_output
+    free = _free_output(output.resolve())
+    if typed_output and free != output.resolve():
+        # The named folder was already used: say so and save next to it instead.
+        text = text.replace(str(typed_output), str(free))
+    binding = resolve_prompt_paths(text, source_root=str(source), output_root=str(free))
+    moved = str(output) if free != output.resolve() else None
+    return binding, default_output, text, moved
+
+
+def _used(output: Path) -> bool:
+    def busy(path: Path) -> bool:
+        return path.exists() and (not path.is_dir() or any(path.iterdir()))
+
+    log = Path(f"{output}.chat-run.log")
+    return busy(output) or busy(qualification_root(output)) or log.exists()
+
+
+def _free_output(output: Path) -> Path:
+    """The folder itself if unused, else the first unused ``<folder>-2``, ``-3``, ..."""
+
+    candidate, number = output, 1
+    while _used(candidate):
+        number += 1
+        candidate = output.with_name(f"{output.name}-{number}")
+    return candidate
 
 
 def _check_source(source: Path, typed: str | None) -> None:
@@ -250,8 +275,6 @@ def _check_output(output: Path, typed: str | None, source: Path) -> None:
         raise ask(f"{output} is a whole storage area, not a results folder.")
     if resolved == source or source in resolved.parents or resolved in source.parents:
         raise ask(f"{output} overlaps the data folder {source}.")
-    if resolved.exists() and any(resolved.iterdir()):
-        raise ask(f"{output} already contains files.")
 
 
 _UPLOAD_ID = re.compile(r"^[a-f0-9]{16,32}$")
@@ -316,13 +339,13 @@ class AutoRuns:
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         request = InterfaceAutoRequest.model_validate(payload)
         uploaded = upload_source(request.upload_id) if request.upload_id else None
-        binding, default_output = _resolve_chat_paths(request.request, uploaded)
+        binding, default_output, text, moved = _resolve_chat_paths(request.request, uploaded)
         source = Path(binding.source_root)
         output = Path(binding.output_root)
         log_path = Path(f"{output}.chat-run.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         command = [
-            sys.executable, "-m", "neuroprep_agentic.main", "auto", request.request,
+            sys.executable, "-m", "neuroprep_agentic.main", "auto", text,
             "--execute", request.execute,
         ]
         if uploaded is not None:
@@ -339,7 +362,8 @@ class AutoRuns:
         with self._lock:
             self._runs[run_id] = {
                 "run_id": run_id,
-                "request": request.request,
+                "request": text,
+                "moved_from": moved,
                 "execute": request.execute,
                 "source_root": str(source),
                 "run_root": str(output),

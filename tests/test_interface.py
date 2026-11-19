@@ -208,13 +208,33 @@ def test_chat_asks_for_missing_or_unusable_data_instead_of_failing(nfs_tmp) -> N
         runs.start({"request": f"Preprocess T1w. My data is at {missing}."})
     assert asked.value.bad_path == str(missing) and "can't find" in asked.value.question
 
+
+def test_chat_moves_a_used_output_folder_aside_automatically(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp
+) -> None:
     source = nfs_tmp / "bids"
+    source.mkdir()
     (nfs_tmp / "busy").mkdir()
     (nfs_tmp / "busy" / "x").write_text("x")
-    source.mkdir()
-    with pytest.raises(interface.NeedsInput) as asked:
-        runs.start({"request": f"My data is at {source}; save outputs to {nfs_tmp / 'busy'}."})
-    assert asked.value.field == "output_root" and "already contains" in asked.value.question
+    (nfs_tmp / "out").mkdir()  # empty, but an earlier run left its pilot folder next to it
+    (nfs_tmp / "out.neuroprep-qualification").mkdir()
+    (nfs_tmp / "out.neuroprep-qualification" / "autopilot-report.json").write_text("{}")
+    commands = []
+
+    class Done:
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(
+        interface.subprocess, "Popen", lambda command, **kw: commands.append(command) or Done()
+    )
+    runs = interface.AutoRuns(None)
+    for name in ("busy", "out"):
+        run = runs.start({"request": f"My data is at {source}; save outputs to {nfs_tmp / name}."})
+        assert run["run_root"] == str(nfs_tmp / f"{name}-2")
+        assert run["moved_from"] == str(nfs_tmp / name)
+        assert f"save outputs to {nfs_tmp / name}-2." in commands[-1][4]
+        assert run["report"] is None  # never the earlier run's report
 
 
 def test_uploaded_folder_becomes_the_source(monkeypatch: pytest.MonkeyPatch, nfs_tmp) -> None:

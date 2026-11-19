@@ -59,9 +59,11 @@ function renderRun(run) {
   const outcome = report.outcome ? ` · ${report.outcome}` : "";
   bubble.append(
     el("p", {}, el("span", { class: `state ${run.state}` }, run.state), ` ${run.execute}${outcome}`),
-    el("p", { class: "meta" }, run.default_output
-      ? `No output folder named, so results go to: ${run.run_root}`
-      : `Output folder: ${run.run_root}`),
+    el("p", { class: "meta" }, run.moved_from
+      ? `${run.moved_from} was already used, so results go to: ${run.run_root}`
+      : run.default_output
+        ? `No output folder named, so results go to: ${run.run_root}`
+        : `Output folder: ${run.run_root}`),
   );
   const list = el("ol", { class: "run-stages" });
   for (const [key, label] of STAGES) {

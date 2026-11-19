@@ -282,6 +282,7 @@ def run_autopilot(
                 output_root=str(pilot_root),
                 bound_roots=True,
                 qualify_alternatives=True,
+                fetch_images=True,
                 manifest_path=str(subset_path),
                 hardware_profile=profile,
                 policy=policy,
@@ -376,6 +377,7 @@ def run_autopilot(
             initialize=execute != "plan-only",
             submit=execute == "slurm",
             gpu_workers=gpu_workers,
+            fetch_images=execute != "plan-only",
             **common,
         )
     except Exception as error:  # noqa: BLE001

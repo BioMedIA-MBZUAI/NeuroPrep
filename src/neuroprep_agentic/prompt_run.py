@@ -21,7 +21,7 @@ from .backend_evidence import (
 from .compiler import compile_execution_plan, save_execution_plan
 from .execution_models import RunLayout
 from .executors import builtin_executor_catalog
-from .images import image_inventory
+from .images import image_inventory, prefetch_images, required_images
 from .models import DatasetSpec, SourceRecord
 from .openjev import OpenJevClient, review_acquisitions
 from .policy import (
@@ -560,6 +560,7 @@ def prepare_prompt_run(
     policy: RunPolicy | None = None,
     bound_roots: bool = False,
     qualify_alternatives: bool = False,
+    fetch_images: bool = False,
 ) -> dict[str, Any]:
     if not request.strip():
         raise ValueError("prompt request cannot be empty")
@@ -757,6 +758,11 @@ def prepare_prompt_run(
     asset_report = prepare_runtime_assets(plan)
     asset_path = output / "runtime-assets.json"
     _write_json(asset_path, asset_report)
+    if fetch_images and any(
+        not (Path(spec.path).is_file() and Path(spec.path).stat().st_size > 0)
+        for spec in required_images(plan, catalog)
+    ):
+        prefetch_images(plan, catalog)  # pulls only the missing ones
     images_report = image_inventory(plan, catalog)
     images_path = output / "images.json"
     _write_json(images_path, images_report)

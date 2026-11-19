@@ -412,3 +412,41 @@ def test_prepare_prompt_run_compiles_a_complete_handoff(
         "structural_preprocess",
         "structural_segment",
     }
+
+
+
+def test_fetch_images_pulls_missing_images_before_preflight(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
+) -> None:
+    source = nfs_tmp / "incoming"
+    t1w = source / "sub-P001" / "anat" / "sub-P001_T1w.nii.gz"
+    t1w.parent.mkdir(parents=True)
+    t1w.write_bytes(b"nifti-placeholder")
+    agentic_project = _git_repository(nfs_tmp / "NeuroPrep-agentic-fetch")
+    monkeypatch.setattr(
+        prompt_run,
+        "compile_prompt_policy",
+        lambda request, profile: RunPolicy(source="prompt", source_prompt=request),
+    )
+    monkeypatch.setattr(prompt_run, "prepare_runtime_assets", lambda plan: {"ready": True})
+    monkeypatch.setattr(
+        prompt_run, "preflight_execution_plan",
+        lambda plan, catalog: PreflightReport(ready=True, checks=[]),
+    )
+    pulls = []
+    monkeypatch.setattr(prompt_run, "prefetch_images", lambda plan, catalog: pulls.append(1))
+    hardware = HardwareProfile(
+        hostname="gpu-test", cpus=8, memory_gb=64, gpus=1, gpu_memory_gb=40,
+        gpu_models=["A100"], cuda_version="12.8", container_runtime="singularity",
+    )
+
+    def run(name: str, fetch: bool) -> None:
+        prepare_prompt_run(
+            f"My data is at {source}; preprocess it and save to {nfs_tmp / name}",
+            hardware_profile=hardware, agentic_project=str(agentic_project), fetch_images=fetch,
+        )
+
+    run("no-fetch", False)
+    assert pulls == []  # images are missing, but nobody asked to fetch them
+    run("fetch", True)
+    assert pulls == [1]
