@@ -1,0 +1,195 @@
+version: 3
+runtime: apptainer
+
+pipelines:
+  bids-validator:
+    mode: utility
+    image: docker://bids/validator:3.0.1
+    args: ["/data", "--json"]
+    resources: {cpus: 1, memory_gb: 2, time: "01:00:00"}
+
+  smriprep:
+    mode: bids_app
+    image: docker://nipreps/smriprep:0.19.1
+    args: ["/data", "/out", "participant", "--participant-label", "{subject}", "--work-dir", "/work/smriprep/{subject}"]
+    resources: {cpus: 8, memory_gb: 24, time: "24:00:00"}
+
+  deepprep:
+    mode: bids_app
+    image: docker://pbfslab/deepprep:25.1.0
+    network: none
+    environment:
+      NXF_HOME: /work/cache/nextflow
+      TEMPLATEFLOW_HOME: /work/cache/templateflow
+      XDG_CACHE_HOME: /work/cache/xdg
+    args: ["/data", "/out/deepprep/sub-{subject}", "participant", "--participant_label", "{subject}", "--device", "auto", "--cpus", "8", "--memory", "32", "--bold_surface_spaces", "None", "--bold_volume_space", "MNI152NLin2009cAsym", "--bold_volume_res", "02", "--bold_confounds", "--skip_bids_validation", "--resume"]
+    binds:
+      - {source: deepprep_wb_command, target: /opt/workbench/bin_linux64/wb_command, readonly: true}
+    metadata_binds:
+      - {key: freesurfer_license, target: /fs_license.txt, readonly: true}
+    resources: {cpus: 8, memory_gb: 32, time: "04:00:00", gpus: 1}
+    note: High-throughput BIDS executor for T1w and BOLD. Each task uses an isolated loopback network because DeepPrep starts a fixed-port local Redis coordinator; its version-pinned Nextflow runtime and caches are preseeded under the NFS work root for offline execution. Surface-space BOLD output is disabled for voxel-model preparation; volumetric MNI output and confounds remain enabled.
+
+  deepprep-postprocess:
+    mode: derivative_app
+    container_action: exec
+    container_executable: /opt/DeepPrep/deepprep/web/pages/postprocess.sh
+    image: docker://pbfslab/deepprep:25.1.0
+    args: ["/out/deepprep/sub-{subject}/BOLD", "/out/deepprep-postprocess/sub-{subject}", "participant", "--subject_id", "{subject}", "--confounds_index_file", "/opt/DeepPrep/deepprep/rest/denoise/12motion_6param_10bCompCor.txt", "--space", "MNI152NLin2009cAsym", "--skip_frame", "2", "--surface_fwhm", "0", "--volume_fwhm", "0", "--bandpass", "0.01-0.08", "--skip_bids_validation", "--resume"]
+    metadata_binds:
+      - {key: freesurfer_license, target: /fs_license.txt, readonly: true}
+    resources: {cpus: 8, memory_gb: 24, time: "04:00:00"}
+    note: Resting-state-only DeepPrep band-pass filtering and nuisance-regression stage. Task fMRI is deliberately not routed here.
+
+  neuroprep-anat-finalize:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 32, time: "08:00:00"}
+
+  neuroprep-modality-finalize:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 2, memory_gb: 12, time: "04:00:00"}
+
+  neuroprep-model-ready:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 1, memory_gb: 2, time: "00:30:00"}
+
+  neuroprep-model-ready-index:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 1, memory_gb: 4, time: "01:00:00"}
+
+  neuroprep-structural:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 24, time: "24:00:00"}
+    note: NeuroPrep invokes ANTs and SynthStrip with an inferred, fail-closed modality policy.
+
+  fmriprep:
+    mode: bids_app
+    image: docker://nipreps/fmriprep:25.2.5
+    args: ["/data", "/out/fmriprep", "participant", "--participant-label", "{subject}", "--work-dir", "/work/fmriprep/{subject}", "--derivatives", "smriprep=/out/smriprep", "--output-spaces", "T1w", "MNI152NLin2009cAsym:res-2"]
+    resources: {cpus: 12, memory_gb: 48, time: "36:00:00"}
+
+  xcpd:
+    mode: derivative_app
+    image: docker://pennlinc/xcp_d:26.1.1
+    args: ["/out/fmriprep", "/out/xcpd", "participant", "--participant-label", "{subject}", "--mode", "linc", "--file-format", "nifti", "--fd-thresh", "0.3", "--min-time", "60", "--smoothing", "0", "--output-type", "censored", "--skip", "parcellation", "--work-dir", "/work/xcpd/{subject}"]
+    resources: {cpus: 8, memory_gb: 24, time: "12:00:00"}
+
+  qsiprep:
+    mode: bids_app
+    image: docker://pennlinc/qsiprep:26.0.0
+    args: ["/data", "/out/qsiprep", "participant", "--participant-label", "{subject}", "--work-dir", "/work/qsiprep/{subject}", "--derivatives", "smriprep=/out/smriprep", "--output-resolution", "1.7", "--bids-filter-file", "/neuroprep-resources/qsiprep_primary_t1.json", "--eddy-config", "/neuroprep-resources/eddy_cuda.json", "--skip-anat-based-spatial-normalization", "--skip-bids-validation"]
+    environment:
+      PATH: /neuroprep-resources:/app/.pixi/envs/qsiprep/bin:/opt/art/bin:/opt/convert3d-nightly/bin:/opt/freesurfer/bin:/opt/freesurfer/tktools:/opt/freesurfer/mni/bin:/opt/dsi-studio:/opt/dsi-studio/dsi_studio_64:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/ants/bin:/opt/mrtrix3-latest/bin:/opt/3Tissue/bin:/src/TORTOISEV4/bin
+    binds:
+      - {source: eddy_cuda10.2, target: /app/.pixi/envs/qsiprep/bin/eddy_cuda10.2, readonly: true}
+    resources: {cpus: 8, memory_gb: 24, time: "24:00:00", gpus: 1}
+    note: Fast core uses the primary/unnumbered T1 and produces corrected DWI in ACPC/T1 space; repeat-T1 averaging and standard-space transforms are optional downstream tiers.
+
+  petprep:
+    mode: bids_app
+    image: docker://nipreps/petprep:0.0.8
+    args: ["/data", "/out/petprep", "participant", "--participant-label", "{subject}", "--work-dir", "/work/petprep/{subject}", "--derivatives", "smriprep=/out/smriprep", "--level", "full", "--output-spaces", "T1w", "MNI152NLin2009cAsym:res-2"]
+    resources: {cpus: 8, memory_gb: 24, time: "24:00:00"}
+
+  aslprep:
+    mode: bids_app
+    image: docker://pennlinc/aslprep:26.0.3
+    args: ["/data", "/out/aslprep", "participant", "--participant-label", "{subject}", "--work-dir", "/work/aslprep/{subject}", "--derivatives", "smriprep=/out/smriprep", "--level", "full", "--output-spaces", "T1w", "MNI152NLin2009cAsym:res-2"]
+    resources: {cpus: 8, memory_gb: 24, time: "24:00:00"}
+
+  mne-bids-pipeline-eeg:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 24, time: "12:00:00"}
+    note: NeuroPrep uses MNE with deterministic continuous-data defaults; event semantics remain explicit.
+
+  mne-bids-pipeline-meg:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 32, time: "18:00:00"}
+    note: NeuroPrep uses MNE; Maxwell filtering is enabled only when its calibration inputs exist.
+
+  mne-bids-pipeline-ieeg:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 24, time: "12:00:00"}
+    note: NeuroPrep uses MNE and requires BIDS electrode/coordinate metadata.
+
+  qsmxt:
+    mode: host
+    executable: qsmxt
+    image: null
+    args: ["run", "{root}", "{derivatives}/qsmxt", "--include", "sub-{subject}*"]
+    resources: {cpus: 8, memory_gb: 32, time: "24:00:00", gpus: 1}
+    note: QSMxT v9 auto-discovers validated BIDS magnitude/phase pairs and caches every stage.
+
+  neuroprep-susceptibility:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 32, time: "24:00:00", gpus: 1}
+    note: Automatically routes magnitude/phase acquisitions to QSMxT and reconstructed SWI to structural MRI preprocessing.
+
+  neuroprep-ct:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 24, time: "12:00:00"}
+    note: HU-preserving affine normalization with SynthStrip and explicit common-grid alignment.
+
+  neuroprep-mra:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 8, memory_gb: 24, time: "12:00:00"}
+    note: Denoising, N4 correction, SynthStrip and single-resampling anatomical normalization.
+
+  neuroprep-register:
+    mode: custom
+    image: docker://antsx/ants:v2.6.5
+    args: []
+    resources: {cpus: 8, memory_gb: 24, time: "12:00:00"}
+
+  neuroprep-qc:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 2, memory_gb: 8, time: "04:00:00"}
+
+  neuroprep-qc-multimodal:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 2, memory_gb: 8, time: "04:00:00"}
+    note: NeuroPrep computes production imaging, motion, quantitative, and sensor metrics.
+
+  neuroprep-visit-assembly:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 1, memory_gb: 4, time: "01:00:00"}
+
+  neuroprep-common-grid:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 4, memory_gb: 24, time: "06:00:00"}
+
+  neuroprep-tensors:
+    mode: native
+    image: null
+    args: []
+    resources: {cpus: 4, memory_gb: 32, time: "06:00:00"}

@@ -124,7 +124,7 @@ the environment, with defaults under `NEUROPREP_HOME` (`~/.neuroprep`):
 | `NEUROPREP_ALLOWED_ROOTS` | Extra data roots plans may read and write (`:`-separated); home and `NEUROPREP_HOME` are always allowed | none |
 | `NEUROPREP_TOOLS_ROOT` | Native tools (FSL-MRS, dcm2niix, Nextflow, TemplateFlow seeds) | `$NEUROPREP_HOME/tools` |
 | `NEUROPREP_CONTAINER_ROOT` | Singularity/Apptainer images | `$NEUROPREP_HOME/containers` |
-| `NEUROPREP_V4_PROJECT` | NeuroPrep multimodal v4 checkout used by v4 executors | `$NEUROPREP_HOME/NeuroPrep-multimodal-v4` |
+| `NEUROPREP_V4_PROJECT` | NeuroPrep multimodal v4 code used by the CT/spatial, SWI/QSM, EEG/MEG and QSIPrep executors | the copy bundled with the package (`neuroprep_agentic/vendor/neuroprep_v4`, Apache-2.0) |
 | `NEUROPREP_AGENTIC_PROJECT` | Git checkout whose commit is recorded in compiled plans | this checkout, else `$NEUROPREP_HOME/NeuroPrep-agentic` |
 | `NEUROPREP_FSL_MRS_ROOT`, `NEUROPREP_DCM2NIIX`, `NEUROPREP_ANTS_IMAGE` | Individual tool overrides | under the tools/container roots |
 | `NEUROPREP_CONTAINER_RUNTIME` | Singularity or Apptainer executable | `singularity`, then `apptainer`, on `PATH` |
@@ -433,3 +433,6 @@ separate written license from the copyright holder.
 If NeuroPrep contributes to a publication, presentation or other output, please
 cite it using `CITATION.cff` (GitHub shows this as "Cite this repository"). Redistributions must keep the `Required Notice:` lines
 at the top of `LICENSE`.
+
+The package bundles the NeuroPrep multimodal v4 code (`neuroprep_agentic/vendor/neuroprep_v4`)
+under its own Apache License 2.0, included in that folder; it is unchanged from its source.

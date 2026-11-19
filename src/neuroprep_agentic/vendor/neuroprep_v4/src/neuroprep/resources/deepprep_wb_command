@@ -1,0 +1,25 @@
+#!/bin/sh
+# DeepPrep needs NVIDIA libraries for CUDA, but Apptainer's host GL shim can be
+# newer than the container glibc.  Workbench is CPU-only, so remove only that
+# injected directory for this process and retain the rest of the CUDA runtime.
+cleaned_path=""
+old_ifs=$IFS
+IFS=:
+for entry in ${LD_LIBRARY_PATH:-}; do
+    [ "$entry" = "/.singularity.d/libs" ] && continue
+    [ -z "$entry" ] && continue
+    if [ -z "$cleaned_path" ]; then
+        cleaned_path=$entry
+    else
+        cleaned_path="${cleaned_path}:$entry"
+    fi
+done
+IFS=$old_ifs
+
+if [ -n "$cleaned_path" ]; then
+    export LD_LIBRARY_PATH="/opt/workbench/libs_linux64:${cleaned_path}"
+else
+    export LD_LIBRARY_PATH="/opt/workbench/libs_linux64"
+fi
+export QT_PLUGIN_PATH="/opt/workbench/plugins"
+exec /opt/workbench/exe_linux64/wb_command "$@"

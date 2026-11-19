@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ -n "${NEUROPREP_EDDY_LOCK:-}" ]; then
+    exec 9>"$NEUROPREP_EDDY_LOCK"
+    flock -x 9
+fi
+
+exec /app/.pixi/envs/qsiprep/bin/eddy_cuda11.0 "$@"

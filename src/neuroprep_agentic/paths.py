@@ -13,7 +13,7 @@ Variable                       Default
 ``NEUROPREP_TOOLS_ROOT``       ``$NEUROPREP_HOME/tools``
 ``NEUROPREP_OUTPUT_ROOT``      ``$NEUROPREP_HOME/runs`` (chat runs whose prompt names no output)
 ``NEUROPREP_CONTAINER_ROOT``   ``$NEUROPREP_HOME/containers``
-``NEUROPREP_V4_PROJECT``       ``$NEUROPREP_HOME/NeuroPrep-multimodal-v4``
+``NEUROPREP_V4_PROJECT``       the bundled copy (``neuroprep_agentic/vendor/neuroprep_v4``)
 ``NEUROPREP_AGENTIC_PROJECT``  this source checkout, else ``$NEUROPREP_HOME/NeuroPrep-agentic``
 ``NEUROPREP_FSL_MRS_ROOT``     ``$NEUROPREP_TOOLS_ROOT/fsl-mrs-2.4.17``
 ``NEUROPREP_DCM2NIIX``         ``$NEUROPREP_TOOLS_ROOT/dcm2niix-v1.0.20260416/dcm2niix``
@@ -84,7 +84,9 @@ def container_root() -> Path:
 
 
 def neuroprep_v4_project() -> Path:
-    return _env_path("NEUROPREP_V4_PROJECT") or neuroprep_home() / "NeuroPrep-multimodal-v4"
+    """The NeuroPrep v4 code; the copy bundled with this package unless overridden."""
+
+    return _env_path("NEUROPREP_V4_PROJECT") or _PACKAGE_DIR / "vendor" / "neuroprep_v4"
 
 
 def source_checkout() -> Path | None:

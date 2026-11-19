@@ -1,0 +1,20 @@
+#!/bin/sh
+# dsi_studio is a CPU-side QSIPrep QC helper. Under Apptainer --nv it must use
+# the container's OpenGL libraries, not a host GL shim built against newer glibc.
+cleaned_path=""
+old_ifs=$IFS
+IFS=:
+for entry in ${LD_LIBRARY_PATH:-}; do
+    [ "$entry" = "/.singularity.d/libs" ] && continue
+    [ -z "$entry" ] && continue
+    if [ -z "$cleaned_path" ]; then
+        cleaned_path=$entry
+    else
+        cleaned_path="${cleaned_path}:$entry"
+    fi
+done
+IFS=$old_ifs
+
+export LD_LIBRARY_PATH="$cleaned_path"
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+exec /opt/dsi-studio/dsi_studio "$@"

@@ -69,6 +69,11 @@
 - Example Slurm launchers read site locations from `scripts/ciai_env.sh`.
 
 ### Changed
+- The NeuroPrep multimodal v4 code is bundled (`neuroprep_agentic/vendor/neuroprep_v4`,
+  Apache-2.0, unchanged), so the CT/spatial, SWI/QSM, EEG/iEEG/MEG and QSIPrep executors
+  work from a pip install; `NEUROPREP_V4_PROJECT` defaults to it. The sensor executors
+  run it with the package's own Python (`python -m neuroprep.cli preprocess-sensor`)
+  instead of a separate v4 environment. The executor catalog digest changes.
 - QSIPrep runs with the image's own `gradients.py`. The patched copy
   (`qsiprep_gradients_26_0.py`) it used to bind was lost with the original NeuroPrep v4
   checkout and is no longer required. The executor catalog digest changes.

@@ -84,6 +84,7 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["src/neuroprep_agentic/vendor"]  # vendored NeuroPrep v4, kept unchanged
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

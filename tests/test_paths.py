@@ -36,7 +36,9 @@ def test_defaults_live_under_neuroprep_home(monkeypatch, tmp_path):
     monkeypatch.setenv("NEUROPREP_HOME", str(tmp_path))
     assert paths.tools_root() == tmp_path / "tools"
     assert paths.container_root() == tmp_path / "containers"
-    assert paths.neuroprep_v4_project() == tmp_path / "NeuroPrep-multimodal-v4"
+    assert paths.neuroprep_v4_project() == paths.package_resources().parent / "vendor" / (
+        "neuroprep_v4"
+    )
     assert paths.fsl_mrs_root() == tmp_path / "tools" / paths.FSL_MRS_DIRNAME
     assert paths.dcm2niix_path() == tmp_path / "tools" / paths.DCM2NIIX_RELATIVE
     assert paths.ants_image() == tmp_path / "containers" / paths.ANTS_IMAGE_NAME
@@ -86,3 +88,22 @@ def test_container_runtime_is_configurable(monkeypatch, tmp_path):
     runtime.write_text("#!/bin/sh\n")
     runtime.chmod(0o755)
     assert paths.container_runtime() == runtime.resolve()
+
+
+def test_bundled_neuroprep_v4_runs_with_this_packages_python(monkeypatch) -> None:
+    """CT, SWI/QSM, EEG/MEG and QSIPrep use the bundled v4 code, not an external checkout."""
+    import subprocess
+    import sys
+
+    monkeypatch.delenv("NEUROPREP_V4_PROJECT", raising=False)
+    v4 = paths.neuroprep_v4_project()
+    for name in ("qsiprep_primary_t1.json", "eddy_cuda.json"):
+        assert (v4 / "src" / "neuroprep" / "resources" / name).is_file()
+    assert (v4 / "LICENSE").read_text().startswith("Apache License")
+    for command in ("preprocess-spatial", "preprocess-sensor", "preprocess-susceptibility"):
+        completed = subprocess.run(
+            [sys.executable, "-m", "neuroprep.cli", command, "--help"],
+            env={"PYTHONPATH": str(v4 / "src"), "PATH": "/usr/bin:/bin"},
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        assert completed.returncode == 0, completed.stderr[-400:]

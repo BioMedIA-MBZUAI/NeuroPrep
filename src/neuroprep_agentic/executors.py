@@ -55,7 +55,8 @@ def native(
 
 
 def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
-    v4 = "{neuroprep_project}/.venv/bin/neuroprep"
+    # The bundled v4 package (vendor/neuroprep_v4) runs with this package's own Python.
+    v4 = "{agentic_python}"
     definitions: list[ExecutorDefinition] = [
         native(
             "neuroprep-bids-stage",
@@ -1015,6 +1016,8 @@ def _native_and_sensor_definitions(v4: str) -> list[ExecutorDefinition]:
                 executable=v4,
                 command=(
                     v4,
+                    "-m",
+                    "neuroprep.cli",
                     "preprocess-sensor",
                     "--bids-root",
                     "{bids_root}",
@@ -1032,6 +1035,7 @@ def _native_and_sensor_definitions(v4: str) -> list[ExecutorDefinition]:
                         f"neuroprep-sensor/sub-{{subject}}/**/*{modality}*",
                     ),
                 ),
+                environment={"PYTHONPATH": "{neuroprep_project}/src"},
                 source="NeuroPrep-multimodal-v4/MNE",
             )
         )

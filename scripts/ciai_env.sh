@@ -6,7 +6,7 @@
 export NEUROPREP_ALLOWED_ROOTS="${NEUROPREP_ALLOWED_ROOTS:-/nfs-stor/salma.hassan}"
 export NEUROPREP_TOOLS_ROOT="${NEUROPREP_TOOLS_ROOT:-/nfs-stor/salma.hassan/NeuroPrep-agentic-tools}"
 export NEUROPREP_CONTAINER_ROOT="${NEUROPREP_CONTAINER_ROOT:-/nfs-stor/salma.hassan/NeuroPrep/containers}"
-export NEUROPREP_V4_PROJECT="${NEUROPREP_V4_PROJECT:-/nfs-stor/salma.hassan/NeuroPrep-multimodal-v4}"
+# NEUROPREP_V4_PROJECT: unset, so the NeuroPrep v4 copy bundled with the package is used.
 export NEUROPREP_HOME="${NEUROPREP_HOME:-/nfs-stor/salma.hassan/NeuroPrep-agentic-home}"
 export CREWAI_TELEMETRY_OPT_OUT="${CREWAI_TELEMETRY_OPT_OUT:-true}"
 export OTEL_SDK_DISABLED="${OTEL_SDK_DISABLED:-true}"
