@@ -23,6 +23,12 @@ os.environ["XDG_STATE_HOME"] = str(_TEST_SESSION_ROOT / "xdg-state")
 os.environ["CREWAI_STORAGE_DIR"] = str(_TEST_SESSION_ROOT / "crewai")
 os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"
+# Some tests use this checkout as the agentic project; allow it wherever the checkout or
+# unpacked sdist lives (e.g. /tmp or a CI runner), not only under the home directory.
+_CHECKOUT = str(Path(__file__).resolve().parents[1])
+os.environ["NEUROPREP_ALLOWED_ROOTS"] = os.pathsep.join(
+    item for item in (os.environ.get("NEUROPREP_ALLOWED_ROOTS"), _CHECKOUT) if item
+)
 
 # Import the package before test modules import CrewAI directly. Its package
 # initializer redirects the two CrewAI 1.15.13 Path.home()-hardcoded settings
