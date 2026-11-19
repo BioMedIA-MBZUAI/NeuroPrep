@@ -512,7 +512,8 @@ def executor_signature(plan: dict[str, Any], executor_id: str) -> str:
         payload = {
             "executor_id": executor_id,
             "plugin_ids": sorted(task.get("plugin_ids", [])),
-            "stages": sorted(task.get("stages", [])),
+            # Stages are left out: which stages a backend serves is a routing decision (an
+            # alternative can take one over); the command and artifacts carry behaviour.
             "scope": task.get("scope"),
             "command": [
                 _normalize_value(str(value), plan, task) for value in task.get("command", [])

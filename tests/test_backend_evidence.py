@@ -632,3 +632,15 @@ def test_signature_folds_per_subject_input_file_names() -> None:
         "tasks": [task("sub-aa", "1111111122"), task("sub-bb", "3333333344")],
     }
     executor_signature(plan, "synthseg")  # raises if the two subjects differ
+
+
+def test_signature_ignores_stages_an_alternative_took_over() -> None:
+    from neuroprep_agentic.backend_evidence import executor_signature
+
+    def plan(stages: list[str]) -> dict:
+        task = {"executor_id": "neuroprep-spatial", "stages": stages, "command": ["run", "ct"]}
+        return {"layout": {}, "tasks": [task]}
+
+    assert executor_signature(plan(["ct_preprocess", "ct_segment"]), "neuroprep-spatial") == (
+        executor_signature(plan(["ct_preprocess"]), "neuroprep-spatial")
+    )

@@ -74,8 +74,10 @@
 - Dependency `mne-nirs` (unused) replaced by `h5py`, which SNIRF reading needs;
   installs no longer pull nilearn, scikit-learn or seaborn.
 - Version is single-sourced from `neuroprep_agentic.__version__`.
-- Executor signatures in evidence no longer include the task's `required` flag
-  (a scheduling choice, not executor behaviour). Evidence and catalog digests change.
+- Executor signatures in evidence no longer include the task's `required` flag or its
+  stage list (scheduling and routing choices, not executor behaviour; an alternative
+  taking over one stage left the CT pipeline with a "different" signature). Evidence
+  and catalog digests change.
 
 ### Fixed
 - Policy compilation failed outright when a model listed packages outside the allowlist
