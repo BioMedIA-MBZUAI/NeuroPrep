@@ -11,6 +11,7 @@ Variable                       Default
 ``NEUROPREP_ALLOWED_ROOTS``    (none) extra data roots, ``os.pathsep``-separated; home and
                                ``NEUROPREP_HOME`` are always allowed
 ``NEUROPREP_TOOLS_ROOT``       ``$NEUROPREP_HOME/tools``
+``NEUROPREP_OUTPUT_ROOT``      ``$NEUROPREP_HOME/runs`` (chat runs whose prompt names no output)
 ``NEUROPREP_CONTAINER_ROOT``   ``$NEUROPREP_HOME/containers``
 ``NEUROPREP_V4_PROJECT``       ``$NEUROPREP_HOME/NeuroPrep-multimodal-v4``
 ``NEUROPREP_AGENTIC_PROJECT``  this source checkout, else ``$NEUROPREP_HOME/NeuroPrep-agentic``
@@ -68,6 +69,10 @@ def allowed_roots() -> tuple[Path, ...]:
         if root not in roots:
             roots.append(root)
     return tuple(roots)
+
+
+def output_root() -> Path:
+    return _env_path("NEUROPREP_OUTPUT_ROOT") or neuroprep_home() / "runs"
 
 
 def tools_root() -> Path:

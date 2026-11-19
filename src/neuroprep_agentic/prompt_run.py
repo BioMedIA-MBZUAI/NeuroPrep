@@ -151,6 +151,29 @@ def resolve_prompt_paths(
 ) -> PromptPathBinding:
     """Resolve X and Y without granting the LLM authority over paths."""
 
+    selected_source, selected_output = extract_prompt_paths(
+        request, source_root=source_root, output_root=output_root
+    )
+    if not selected_source:
+        raise ValueError(
+            "could not resolve a source root; state 'data is at /approved/path' "
+            "or pass --source-root"
+        )
+    if not selected_output:
+        raise ValueError(
+            "could not resolve an output root; state 'save to /approved/path' or pass --output-root"
+        )
+    return PromptPathBinding(source_root=selected_source, output_root=selected_output)
+
+
+def extract_prompt_paths(
+    request: str,
+    *,
+    source_root: str | None = None,
+    output_root: str | None = None,
+) -> tuple[str | None, str | None]:
+    """The input and output paths a request names (overrides win), not yet validated."""
+
     detected_source = _extract_marked_path(_SOURCE_RE, request)
     detected_output = _extract_marked_path(_OUTPUT_RE, request)
     mentioned = [_clean_extracted_path(match.group(0)) for match in _PATH_RE.finditer(request)]
@@ -160,7 +183,12 @@ def resolve_prompt_paths(
         detected_source = mentioned[0]
     if detected_output is None and len(mentioned) >= 2:
         detected_output = mentioned[-1]
-    if detected_source is None and source_root is None and len(mentioned) == 1:
+    if (
+        detected_source is None
+        and source_root is None
+        and len(mentioned) == 1
+        and mentioned[0] != detected_output
+    ):
         detected_source = mentioned[0]
 
     if (
@@ -176,18 +204,7 @@ def resolve_prompt_paths(
     ):
         raise ValueError("explicit output root conflicts with the prompt")
 
-    selected_source = source_root or detected_source
-    selected_output = output_root or detected_output
-    if not selected_source:
-        raise ValueError(
-            "could not resolve a source root; state 'data is at /approved/path' "
-            "or pass --source-root"
-        )
-    if not selected_output:
-        raise ValueError(
-            "could not resolve an output root; state 'save to /approved/path' or pass --output-root"
-        )
-    return PromptPathBinding(source_root=selected_source, output_root=selected_output)
+    return source_root or detected_source, output_root or detected_output
 
 
 def _suffix(path: Path) -> str:

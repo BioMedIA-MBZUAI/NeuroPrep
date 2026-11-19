@@ -189,7 +189,76 @@ def test_chat_runs_auto_from_one_prompt_and_reports_released_files(
         server.server_close()
 
 
-def test_chat_rejects_a_prompt_without_paths() -> None:
+def test_chat_asks_for_missing_or_unusable_data_instead_of_failing(nfs_tmp) -> None:
     runs = interface.AutoRuns(None)
-    with pytest.raises(ValueError):
+    with pytest.raises(interface.NeedsInput) as asked:
         runs.start({"request": "Preprocess my MRI please."})
+    assert asked.value.field == "source_root" and "attach" in asked.value.question
+
+    with pytest.raises(interface.NeedsInput) as asked:
+        runs.start({"request": f"Preprocess T1w; save outputs to {nfs_tmp / 'out'}."})
+    assert asked.value.field == "source_root"
+
+    missing = nfs_tmp / "nowhere"
+    with pytest.raises(interface.NeedsInput) as asked:
+        runs.start({"request": f"Preprocess T1w. My data is at {missing}."})
+    assert asked.value.bad_path == str(missing) and "can't find" in asked.value.question
+
+    source = nfs_tmp / "bids"
+    (nfs_tmp / "busy").mkdir()
+    (nfs_tmp / "busy" / "x").write_text("x")
+    source.mkdir()
+    with pytest.raises(interface.NeedsInput) as asked:
+        runs.start({"request": f"My data is at {source}; save outputs to {nfs_tmp / 'busy'}."})
+    assert asked.value.field == "output_root" and "already contains" in asked.value.question
+
+
+def test_uploaded_folder_becomes_the_source(monkeypatch: pytest.MonkeyPatch, nfs_tmp) -> None:
+    import io
+
+    monkeypatch.setenv("NEUROPREP_OUTPUT_ROOT", str(nfs_tmp / "runs"))
+    upload = "0123456789abcdef"
+    for name in ("study/sub-01/anat/sub-01_T1w.nii.gz", "study/dataset_description.json"):
+        interface.save_upload(upload, name, io.BytesIO(b"data"), 4)
+    for bad in ("../escape", "/abs", "a/../../b"):
+        with pytest.raises(ValueError):
+            interface.save_upload(upload, bad, io.BytesIO(b"data"), 4)
+    commands = []
+
+    class Done:
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(
+        interface.subprocess, "Popen", lambda command, **kw: commands.append(command) or Done()
+    )
+    run = interface.AutoRuns(None).start({"request": "Preprocess T1w.", "upload_id": upload})
+
+    source = nfs_tmp / "runs" / "uploads" / upload / "study"
+    assert run["source_root"] == str(source) and run["uploaded"] is True
+    assert (source / "sub-01/anat/sub-01_T1w.nii.gz").read_bytes() == b"data"
+    assert commands[0][commands[0].index("--source-root") + 1] == str(source)
+    assert Path(run["run_root"]).name.startswith("study-")
+
+
+def test_chat_saves_to_the_default_output_root_when_the_prompt_names_none(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp
+) -> None:
+    source = nfs_tmp / "ds000102"
+    source.mkdir()
+    monkeypatch.setenv("NEUROPREP_OUTPUT_ROOT", str(nfs_tmp / "runs"))
+    commands = []
+
+    class Done:
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(
+        interface.subprocess, "Popen", lambda command, **kw: commands.append(command) or Done()
+    )
+    run = interface.AutoRuns(None).start({"request": f"Preprocess T1w. My data is at {source}."})
+
+    output = Path(run["run_root"])
+    assert output.parent == nfs_tmp / "runs" and output.name.startswith("ds000102-")
+    assert run["default_output"] is True
+    assert commands[0][commands[0].index("--output-root") + 1] == str(output)

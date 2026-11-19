@@ -3,22 +3,25 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
 import uuid
+from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from . import paths
 from .autopilot import qualification_root
-from .prompt_run import prepare_prompt_run, resolve_prompt_paths
-from .settings import validated_agentic_project
+from .prompt_run import extract_prompt_paths, prepare_prompt_run, resolve_prompt_paths
+from .settings import validated_agentic_project, validated_cluster_path
 
 _LOG = logging.getLogger(__name__)
 _MAX_REQUEST_BYTES = 32 * 1024
@@ -99,6 +102,7 @@ class InterfaceAutoRequest(BaseModel):
 
     request: str = Field(min_length=1, max_length=4000)
     execute: str = "local"
+    upload_id: str | None = None
 
     @field_validator("execute")
     @classmethod
@@ -106,6 +110,159 @@ class InterfaceAutoRequest(BaseModel):
         if value not in _EXECUTE_MODES:
             raise ValueError(f"execute must be one of {', '.join(_EXECUTE_MODES)}")
         return value
+
+
+class NeedsInput(Exception):
+    """A question for the person in the chat instead of an error.
+
+    ``bad_path`` is the text in their request that the answer should replace.
+    """
+
+    def __init__(self, field: str, question: str, bad_path: str | None = None) -> None:
+        super().__init__(question)
+        self.field = field
+        self.question = question
+        self.bad_path = bad_path
+
+    def payload(self) -> dict[str, Any]:
+        return {"needs": self.field, "question": self.question, "bad_path": self.bad_path}
+
+
+_ASK_SOURCE = (
+    "Where is the data? Paste the folder path (for example /data/my-study), "
+    "or attach the folder or files."
+)
+
+
+def _roots() -> str:
+    return ", ".join(str(root) for root in paths.allowed_roots())
+
+
+def _resolve_chat_paths(text: str, uploaded: Path | None) -> tuple[Any, bool]:
+    """Paths from the request, checked one by one so a problem becomes a question.
+
+    A request without an output folder gets a new one under the output root.
+    """
+
+    try:
+        typed_source, typed_output = extract_prompt_paths(
+            text, source_root=str(uploaded) if uploaded else None
+        )
+    except ValueError as error:  # the request names a folder and files were attached
+        raise NeedsInput(
+            "source_root",
+            "You attached files and also named a data folder. Remove the folder from your "
+            "message to use the attached files, or remove the attachment.",
+        ) from error
+    if not typed_source:
+        raise NeedsInput("source_root", _ASK_SOURCE)
+    typed = None if uploaded else typed_source
+    source = Path(typed_source).expanduser()
+    _check_source(source, typed)
+    source = source.resolve()
+    default_output = not typed_output
+    if default_output:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        output = paths.output_root() / f"{source.name}-{stamp}"
+    else:
+        output = Path(str(typed_output)).expanduser()
+    _check_output(output, None if default_output else typed_output, source)
+    binding = resolve_prompt_paths(text, source_root=str(source), output_root=str(output))
+    return binding, default_output
+
+
+def _check_source(source: Path, typed: str | None) -> None:
+    if not source.is_absolute():
+        raise NeedsInput(
+            "source_root", f"Please give the full path of {source}, starting with /.", typed
+        )
+    try:
+        validated_cluster_path(str(source))
+    except ValueError:
+        raise NeedsInput(
+            "source_root",
+            f"I'm not allowed to read {source}: data must be under {_roots()}. "
+            "Give a folder there, or attach the files.",
+            typed,
+        ) from None
+    if not source.exists():
+        raise NeedsInput(
+            "source_root", f"I can't find {source}. Check the path, or attach the files.", typed
+        )
+    if not source.is_dir():
+        raise NeedsInput(
+            "source_root",
+            f"{source} is a file. Give the folder that contains the data, or attach it.",
+            typed,
+        )
+
+
+def _check_output(output: Path, typed: str | None, source: Path) -> None:
+    def ask(problem: str) -> NeedsInput:
+        return NeedsInput(
+            "output_root", f"{problem} Which new folder should I save the results to?", typed
+        )
+
+    if not output.is_absolute():
+        raise ask(f"{output} is not a full path (it must start with /).")
+    try:
+        validated_cluster_path(str(output))
+    except ValueError:
+        raise ask(f"I can't save to {output}: results must go under {_roots()}.") from None
+    resolved = output.resolve()
+    if resolved in paths.allowed_roots():
+        raise ask(f"{output} is a whole storage area, not a results folder.")
+    if resolved == source or source in resolved.parents or resolved in source.parents:
+        raise ask(f"{output} overlaps the data folder {source}.")
+    if resolved.exists() and any(resolved.iterdir()):
+        raise ask(f"{output} already contains files.")
+
+
+_UPLOAD_ID = re.compile(r"^[a-f0-9]{16,32}$")
+_MAX_UPLOAD_BYTES = int(os.environ.get("NEUROPREP_MAX_UPLOAD_MB", "20480")) * 1024 * 1024
+
+
+def upload_dir(upload_id: str) -> Path:
+    if not _UPLOAD_ID.match(upload_id):
+        raise ValueError("invalid upload id")
+    return paths.output_root() / "uploads" / upload_id
+
+
+def save_upload(upload_id: str, relative: str, stream: Any, length: int) -> Path:
+    """Write one uploaded file under the upload folder, keeping its relative folders."""
+
+    parts = PurePosixPath(relative).parts
+    if not parts or relative.startswith("/") or any(p in ("", ".", "..") for p in parts):
+        raise ValueError("invalid file path")
+    if length > _MAX_UPLOAD_BYTES:
+        raise ValueError("file is larger than NEUROPREP_MAX_UPLOAD_MB")
+    root = upload_dir(upload_id)
+    target = root.joinpath(*parts)
+    validated_cluster_path(str(target))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(target.name + ".part")
+    remaining = length
+    with partial.open("wb") as handle:
+        while remaining:
+            chunk = stream.read(min(remaining, 1024 * 1024))
+            if not chunk:
+                raise ValueError("upload ended early")
+            handle.write(chunk)
+            remaining -= len(chunk)
+    partial.replace(target)
+    return target
+
+
+def upload_source(upload_id: str) -> Path:
+    """The uploaded data folder: the single top folder of a folder upload, else the root."""
+
+    root = upload_dir(upload_id)
+    entries = list(root.iterdir()) if root.is_dir() else []
+    if not entries:
+        raise NeedsInput("source_root", "The attached files did not arrive. Attach them again.")
+    if len(entries) == 1 and entries[0].is_dir():
+        return entries[0]
+    return root
 
 
 class AutoRuns:
@@ -122,17 +279,20 @@ class AutoRuns:
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         request = InterfaceAutoRequest.model_validate(payload)
-        # Resolve the paths now so a prompt without input/output paths fails at once.
-        binding = resolve_prompt_paths(request.request)
+        uploaded = upload_source(request.upload_id) if request.upload_id else None
+        binding, default_output = _resolve_chat_paths(request.request, uploaded)
+        source = Path(binding.source_root)
         output = Path(binding.output_root)
-        if output.exists() and any(output.iterdir()):
-            raise ValueError(f"output folder already exists and is not empty: {output}")
         log_path = Path(f"{output}.chat-run.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         command = [
             sys.executable, "-m", "neuroprep_agentic.main", "auto", request.request,
             "--execute", request.execute,
         ]
+        if uploaded is not None:
+            command += ["--source-root", str(uploaded)]
+        if default_output:
+            command += ["--output-root", str(output)]
         if self.agentic_project:
             command += ["--agentic-project", self.agentic_project]
         with log_path.open("wb") as log:
@@ -145,8 +305,10 @@ class AutoRuns:
                 "run_id": run_id,
                 "request": request.request,
                 "execute": request.execute,
-                "source_root": binding.source_root,
+                "source_root": str(source),
                 "run_root": str(output),
+                "default_output": default_output,
+                "uploaded": uploaded is not None,
                 "log_path": str(log_path),
                 "process": process,
             }
@@ -290,12 +452,16 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802
-        route = urlsplit(self.path).path
-        if route not in {"/api/plan", "/api/auto"}:
+        url = urlsplit(self.path)
+        route = url.path
+        if route not in {"/api/plan", "/api/auto", "/api/upload"}:
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
             return
         if not self._same_origin():
             self._json(HTTPStatus.FORBIDDEN, {"error": "Loopback same-origin request required"})
+            return
+        if route == "/api/upload":
+            self._upload(parse_qs(url.query))
             return
         if self.headers.get_content_type() != "application/json":
             self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "JSON body required"})
@@ -312,7 +478,10 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("request body must be a JSON object")
             if route == "/api/auto":
-                result = self.server.runs.start(payload)
+                try:
+                    result = self.server.runs.start(payload)
+                except NeedsInput as question:
+                    result = question.payload()
             else:
                 result = compile_interface_plan(
                     payload, agentic_project=self.server.agentic_project
@@ -325,6 +494,21 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Planning failed"})
             return
         self._json(HTTPStatus.OK, result)
+
+
+    def _upload(self, query: dict[str, list[str]]) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "-1"))
+            if length < 0:
+                raise ValueError("Content-Length required")
+            upload_id = query.get("id", [""])[0]
+            relative = query.get("path", [""])[0]
+            save_upload(upload_id, relative, self.rfile, length)
+        except ValueError as exc:
+            self.close_connection = True
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        self._json(HTTPStatus.OK, {"saved": relative})
 
 
 def serve_interface(

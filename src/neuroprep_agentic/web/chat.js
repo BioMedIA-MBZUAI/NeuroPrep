@@ -59,7 +59,9 @@ function renderRun(run) {
   const outcome = report.outcome ? ` · ${report.outcome}` : "";
   bubble.append(
     el("p", {}, el("span", { class: `state ${run.state}` }, run.state), ` ${run.execute}${outcome}`),
-    el("p", { class: "meta" }, `Output folder: ${run.run_root}`),
+    el("p", { class: "meta" }, run.default_output
+      ? `No output folder named, so results go to: ${run.run_root}`
+      : `Output folder: ${run.run_root}`),
   );
   const list = el("ol", { class: "run-stages" });
   for (const [key, label] of STAGES) {
@@ -112,24 +114,118 @@ function track(run) {
   if (run.state === "running") setTimeout(() => poll(run.run_id), POLL_MS);
 }
 
+// A question the assistant asked; the next message answers it.
+let pending = null;
+// The attached folder or files, already uploaded to the server.
+let attachment = null;
+const attachStatus = document.getElementById("attachment");
+const DEFAULT_REQUEST = "Preprocess every modality in the attached data with quality control.";
+
+function looksLikePath(text) {
+  return /^[\/~]\S*$/.test(text);
+}
+
+// Fold an answer into the request the question was about.
+function compose(answer) {
+  if (!pending) return answer || (attachment ? DEFAULT_REQUEST : "");
+  if (!answer) return pending.text;
+  if (looksLikePath(answer)) {
+    if (pending.bad_path) return pending.text.split(pending.bad_path).join(answer);
+    const marker = pending.needs === "output_root" ? "Save outputs to" : "My data is at";
+    return `${pending.text} ${marker} ${answer}.`;
+  }
+  return `${pending.text} ${answer}`;
+}
+
+function showAttachment() {
+  attachStatus.replaceChildren();
+  if (!attachment) return;
+  const mb = (attachment.bytes / 1e6).toFixed(1);
+  const label = attachment.done
+    ? `Attached ${attachment.name}: ${attachment.count} file(s), ${mb} MB`
+    : `Uploading ${attachment.name}: ${attachment.sent}/${attachment.count} file(s)…`;
+  const remove = el("button", { type: "button", class: "text-button", "aria-label": "Remove attachment" }, "Remove");
+  remove.addEventListener("click", () => { attachment = null; showAttachment(); });
+  attachStatus.append(el("span", {}, label), attachment.done ? remove : "");
+  if (attachment.error) attachStatus.append(el("span", { class: "error" }, ` ${attachment.error}`));
+}
+
+function randomId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function upload(files) {
+  const list = Array.from(files).filter((file) => !file.name.startsWith("."));
+  if (!list.length) return;
+  const first = list[0].webkitRelativePath || list[0].name;
+  const name = list[0].webkitRelativePath ? first.split("/")[0] : list.length === 1 ? first : `${list.length} files`;
+  const current = { id: randomId(), name, count: list.length, sent: 0, bytes: 0, done: false };
+  attachment = current;
+  send.disabled = true;
+  showAttachment();
+  try {
+    for (const file of list) {
+      const path = file.webkitRelativePath || file.name;
+      const response = await fetch(`/api/upload?id=${current.id}&path=${encodeURIComponent(path)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+      if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+      current.sent += 1;
+      current.bytes += file.size;
+      if (attachment === current) showAttachment();
+    }
+    current.done = true;
+  } catch (error) {
+    current.error = `Upload failed: ${error.message}`;
+  } finally {
+    send.disabled = false;
+    if (attachment === current) showAttachment();
+  }
+}
+
+for (const id of ["pick-folder", "pick-files"]) {
+  const input = document.getElementById(id);
+  input.addEventListener("change", () => { upload(input.files); input.value = ""; });
+}
+document.getElementById("attach-folder").addEventListener("click", () => document.getElementById("pick-folder").click());
+document.getElementById("attach-files").addEventListener("click", () => document.getElementById("pick-files").click());
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const text = prompt.value.trim();
-  if (!text) return;
-  addMessage("user", text);
+  const answer = prompt.value.trim();
+  const usable = attachment && attachment.done ? attachment : null;
+  if (!answer && !usable) return;
+  const request = compose(answer);
+  addMessage("user", answer || "", usable ? el("p", { class: "meta" }, `Attached: ${usable.name} (${usable.count} file(s))`) : "");
   send.disabled = true;
   try {
+    const body = { request, execute: execute.value };
+    if (usable) body.upload_id = usable.id;
     const response = await fetch("/api/auto", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request: text, execute: execute.value }),
+      body: JSON.stringify(body),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || response.statusText);
     prompt.value = "";
+    if (result.needs) {
+      pending = { text: request, needs: result.needs, bad_path: result.bad_path };
+      addMessage("bot", el("p", {}, result.question));
+      prompt.placeholder = "Type your answer (a folder path is fine), or attach the data.";
+      prompt.focus();
+      return;
+    }
+    pending = null;
+    attachment = null;
+    showAttachment();
+    prompt.placeholder = "What should NeuroPrep prepare? Include the input folder (and, optionally, where to save).";
     track(result);
   } catch (error) {
-    addMessage("bot", el("p", { class: "error" }, `Could not start: ${error.message}`));
+    addMessage("bot", el("p", { class: "error" }, `Something went wrong: ${error.message}. You can try again.`));
   } finally {
     send.disabled = false;
   }

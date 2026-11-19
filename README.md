@@ -257,9 +257,17 @@ directives, task state and release decisions are not part of its API.
 ### Chat: one prompt, whole run
 
 `http://127.0.0.1:8787/chat` is a chat page for `neuroprep-agentic auto`. Type a
-request that names the input and output folders, for example *"Preprocess the
-structural T1-weighted MRI of every subject with quality control. My data is at
-/data/bids; save outputs to /data/out."*, and choose how to run it:
+request that names the input folder, for example *"Preprocess the structural
+T1-weighted MRI of every subject with quality control. My data is at /data/bids."*,
+or attach the data with **Attach folder** / **Attach files** (uploaded to
+`$NEUROPREP_OUTPUT_ROOT/uploads/`, keeping the folder layout; at most
+`NEUROPREP_MAX_UPLOAD_MB`, default 20480, per file). Naming an output folder
+("save outputs to /data/out") is optional: otherwise results go to a new folder
+named after the input under `NEUROPREP_OUTPUT_ROOT` (default `$NEUROPREP_HOME/runs`).
+When something is missing or unusable (no input, a folder that does not exist or
+is outside the allowed roots, an output folder that already has files) the page
+asks for it instead of failing, and the answer, typed or attached, completes the
+original request. Choose how to run it:
 
 - **here, to completion** (`--execute local`): run on the host serving the page,
   e.g. inside a GPU job; the released files are listed in the chat when done.
