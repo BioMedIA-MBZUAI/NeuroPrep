@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
+import sys
+import threading
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -11,7 +16,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from .prompt_run import prepare_prompt_run
+from .autopilot import qualification_root
+from .prompt_run import prepare_prompt_run, resolve_prompt_paths
 from .settings import validated_agentic_project
 
 _LOG = logging.getLogger(__name__)
@@ -21,7 +27,11 @@ _ASSETS = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/app.css": ("app.css", "text/css; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/chat": ("chat.html", "text/html; charset=utf-8"),
+    "/chat.css": ("chat.css", "text/css; charset=utf-8"),
+    "/chat.js": ("chat.js", "text/javascript; charset=utf-8"),
 }
+_EXECUTE_MODES = ("local", "slurm", "plan-only")
 
 
 class InterfacePlanRequest(BaseModel):
@@ -84,6 +94,119 @@ def compile_interface_plan(
     }
 
 
+class InterfaceAutoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: str = Field(min_length=1, max_length=4000)
+    execute: str = "local"
+
+    @field_validator("execute")
+    @classmethod
+    def known_mode(cls, value: str) -> str:
+        if value not in _EXECUTE_MODES:
+            raise ValueError(f"execute must be one of {', '.join(_EXECUTE_MODES)}")
+        return value
+
+
+class AutoRuns:
+    """`neuroprep-agentic auto` runs started from the chat page, one subprocess each.
+
+    shortcut: runs are tracked in memory, so a server restart forgets them (their
+    reports and outputs stay on disk); persist the table if the server must restart.
+    """
+
+    def __init__(self, agentic_project: str | None) -> None:
+        self.agentic_project = agentic_project
+        self._runs: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        request = InterfaceAutoRequest.model_validate(payload)
+        # Resolve the paths now so a prompt without input/output paths fails at once.
+        binding = resolve_prompt_paths(request.request)
+        output = Path(binding.output_root)
+        if output.exists() and any(output.iterdir()):
+            raise ValueError(f"output folder already exists and is not empty: {output}")
+        log_path = Path(f"{output}.chat-run.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable, "-m", "neuroprep_agentic.main", "auto", request.request,
+            "--execute", request.execute,
+        ]
+        if self.agentic_project:
+            command += ["--agentic-project", self.agentic_project]
+        with log_path.open("wb") as log:
+            process = subprocess.Popen(  # noqa: S603 - argv list, no shell
+                command, stdout=log, stderr=subprocess.STDOUT, env=dict(os.environ)
+            )
+        run_id = uuid.uuid4().hex[:12]
+        with self._lock:
+            self._runs[run_id] = {
+                "run_id": run_id,
+                "request": request.request,
+                "execute": request.execute,
+                "source_root": binding.source_root,
+                "run_root": str(output),
+                "log_path": str(log_path),
+                "process": process,
+            }
+        return self.status(run_id)
+
+    def status(self, run_id: str) -> dict[str, Any]:
+        with self._lock:
+            run = self._runs.get(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        exit_code = run["process"].poll()
+        report_path = qualification_root(Path(run["run_root"])) / "autopilot-report.json"
+        report = _read_json(report_path)
+        state = "running" if exit_code is None else ("finished" if exit_code == 0 else "failed")
+        index = Path(run["run_root"]) / "derivatives" / "release" / "model-ready-index.jsonl"
+        return {
+            **{key: value for key, value in run.items() if key != "process"},
+            "state": state,
+            "exit_code": exit_code,
+            "report": report,
+            "log_tail": _tail(Path(run["log_path"])),
+            "outputs": _released_outputs(index),
+        }
+
+    def list(self) -> list[dict[str, Any]]:
+        with self._lock:
+            ids = list(self._runs)
+        return [self.status(run_id) for run_id in ids]
+
+
+def _read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _tail(path: Path, lines: int = 40) -> str:
+    try:
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
+    except OSError:
+        return ""
+
+
+def _released_outputs(index: Path, limit: int = 200) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    try:
+        with index.open(encoding="utf-8") as stream:
+            for line in stream:
+                row = json.loads(line)
+                if row.get("record_type") == "index_metadata":
+                    continue
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
+    except (OSError, ValueError):
+        return []
+    return rows
+
+
 def _public_error(exc: Exception) -> str:
     if not isinstance(exc, ValidationError):
         return str(exc)
@@ -103,6 +226,7 @@ class _InterfaceServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], agentic_project: str | None):
         super().__init__(address, _InterfaceHandler)
         self.agentic_project = agentic_project
+        self.runs = AutoRuns(agentic_project)
 
 
 class _InterfaceHandler(BaseHTTPRequestHandler):
@@ -147,6 +271,15 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
         if path == "/api/health":
             self._json(HTTPStatus.OK, {"ready": True, "service": "neuroprep-interface"})
             return
+        if path == "/api/runs":
+            self._json(HTTPStatus.OK, {"runs": self.server.runs.list()})
+            return
+        if path.startswith("/api/runs/"):
+            try:
+                self._json(HTTPStatus.OK, self.server.runs.status(path.removeprefix("/api/runs/")))
+            except KeyError:
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown run"})
+            return
         asset = _ASSETS.get(path)
         if asset is None:
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -157,7 +290,8 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802
-        if urlsplit(self.path).path != "/api/plan":
+        route = urlsplit(self.path).path
+        if route not in {"/api/plan", "/api/auto"}:
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
             return
         if not self._same_origin():
@@ -177,9 +311,12 @@ class _InterfaceHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("request body must be a JSON object")
-            result = compile_interface_plan(
-                payload, agentic_project=self.server.agentic_project
-            )
+            if route == "/api/auto":
+                result = self.server.runs.start(payload)
+            else:
+                result = compile_interface_plan(
+                    payload, agentic_project=self.server.agentic_project
+                )
         except (FileNotFoundError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
             self._json(HTTPStatus.BAD_REQUEST, {"error": _public_error(exc)})
             return

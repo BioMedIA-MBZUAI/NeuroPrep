@@ -49,6 +49,9 @@
   otherwise `singularity`, then `apptainer`, is found on `PATH`. Executor commands
   use a `{container_runtime}` placeholder instead of `/usr/bin/singularity`.
 - Python 3.13 support (tested: full suite passes on 3.11, 3.12 and 3.13).
+- Chat page (`/chat` on `neuroprep-agentic interface`): type one request with the
+  input and output folders; it starts `auto`, shows each stage, the chosen backends
+  and the log, and lists the released files when the run finishes.
 - `neuroprep-agentic --version`.
 - `runtime-check` reports the configured LLM provider; hosted providers are
   checked for credentials without spending tokens.

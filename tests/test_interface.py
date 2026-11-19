@@ -126,3 +126,70 @@ def test_interface_serves_assets_and_plan_api(monkeypatch: pytest.MonkeyPatch) -
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_chat_runs_auto_from_one_prompt_and_reports_released_files(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp
+) -> None:
+    import subprocess
+    import sys
+    import time
+
+    source = nfs_tmp / "bids"
+    source.mkdir()
+    output = nfs_tmp / "out"
+    # Stand-in for `neuroprep-agentic auto`: writes a report and a release index.
+    fake_auto = (
+        "import json, pathlib, sys\n"
+        f"out = pathlib.Path({str(output)!r})\n"
+        "q = pathlib.Path(str(out) + '.neuroprep-qualification'); q.mkdir(parents=True)\n"
+        "(q / 'autopilot-report.json').write_text(json.dumps({'outcome': 'released',"
+        " 'stages': {'policy': {'status': 'passed'}, 'release': {'status': 'passed'}}}))\n"
+        "r = out / 'derivatives' / 'release'; r.mkdir(parents=True)\n"
+        "(r / 'model-ready-index.jsonl').write_text(json.dumps({'record_type': 'index_metadata'})"
+        " + '\\n' + json.dumps({'path': '/x/sub-01_T1w.nii.gz',"
+        " 'executor_id': 'smriprep'}) + '\\n')\n"
+        "print('auto', sys.argv[1:])\n"
+    )
+    real_popen = subprocess.Popen
+    commands = []
+
+    def popen(command, **kwargs):
+        commands.append(command)
+        return real_popen([sys.executable, "-c", fake_auto, *command[3:]], **kwargs)
+
+    monkeypatch.setattr(interface.subprocess, "Popen", popen)
+    server = interface._InterfaceServer(("127.0.0.1", 0), None)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/chat", timeout=5) as response:
+            assert "NeuroPrep Chat" in response.read().decode()
+        text = f"Preprocess T1w. My data is at {source}; save outputs to {output}."
+        request = Request(
+            base + "/api/auto",
+            data=json.dumps({"request": text, "execute": "local"}).encode(),
+            headers={"Content-Type": "application/json", "Origin": base},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            run = json.load(response)
+        assert commands[0][3:7] == ["auto", text, "--execute", "local"]
+        for _ in range(100):
+            with urlopen(f"{base}/api/runs/{run['run_id']}", timeout=5) as response:
+                run = json.load(response)
+            if run["state"] != "running":
+                break
+            time.sleep(0.1)
+        assert run["state"] == "finished" and run["report"]["outcome"] == "released"
+        assert run["outputs"] == [{"path": "/x/sub-01_T1w.nii.gz", "executor_id": "smriprep"}]
+        assert "auto" in run["log_tail"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_chat_rejects_a_prompt_without_paths() -> None:
+    runs = interface.AutoRuns(None)
+    with pytest.raises(ValueError):
+        runs.start({"request": "Preprocess my MRI please."})

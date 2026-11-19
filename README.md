@@ -233,8 +233,9 @@ presented as validated merely because they were detected.
 
 The local interface turns a natural-language study request into the same typed
 policy, acquisition graph, backend plan and preflight report used by the CLI.
-It inventories the source and writes planning artifacts, but deliberately does
-not initialize workers, submit jobs or release derivatives.
+The planning page inventories the source and writes planning artifacts, but
+does not initialize workers, submit jobs or release derivatives; the chat page
+below runs the whole chain.
 
 ```bash
 neuroprep-agentic interface \
@@ -252,6 +253,27 @@ ssh -N -L 8787:127.0.0.1:8787 USER@CLUSTER
 The interface accepts only scientific request fields. Paths are validated by
 the deterministic prompt-run boundary, and commands, containers, scheduler
 directives, task state and release decisions are not part of its API.
+
+### Chat: one prompt, whole run
+
+`http://127.0.0.1:8787/chat` is a chat page for `neuroprep-agentic auto`. Type a
+request that names the input and output folders, for example *"Preprocess the
+structural T1-weighted MRI of every subject with quality control. My data is at
+/data/bids; save outputs to /data/out."*, and choose how to run it:
+
+- **here, to completion** (`--execute local`): run on the host serving the page,
+  e.g. inside a GPU job; the released files are listed in the chat when done.
+- **pilot + plan only** (`--execute plan-only`): qualify the tools on a pilot and
+  stop at the production plan.
+- **submit to Slurm** (`--execute slurm`): submit the production workers.
+
+Each request starts one `auto` process; the page shows its stages as they finish,
+the backends chosen, the log tail and, at the end, the released files from
+`derivatives/release/model-ready-index.jsonl`. The process log is written next to
+the output folder (`<output>.chat-run.log`). Runs are tracked while the server is
+up; after a restart the reports and outputs remain on disk. Unlike the planning
+page, the chat page executes the run, so start the server only where that is
+allowed (on CIAI: inside a compute job, never on the login node).
 
 ## Commands
 

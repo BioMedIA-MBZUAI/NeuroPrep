@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Ask NeuroPrep to preprocess a dataset from one prompt.">
+    <title>NeuroPrep Chat</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/chat.css">
+    <script src="/chat.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="NeuroPrep home">
+        <span class="brand-mark" aria-hidden="true">N</span>
+        <span>NeuroPrep</span>
+      </a>
+      <div class="service-state"><span class="pulse"></span> Autonomous runs on this host</div>
+    </header>
+
+    <main class="chat">
+      <ol id="messages" class="messages" aria-live="polite">
+        <li class="msg bot">
+          <p>Tell me what to prepare, where the data is and where to save the results. For example:</p>
+          <p class="example" id="example">Preprocess the structural T1-weighted MRI of every subject with quality control. My data is at /path/to/bids; save outputs to /path/to/output.</p>
+          <p class="hint">I plan the run, qualify the tools on a pilot subject, then process everything and list the released files here. Runs take hours; you can close this page and come back.</p>
+        </li>
+      </ol>
+
+      <form id="composer" class="composer-bar">
+        <label class="visually-hidden" for="prompt">Request</label>
+        <textarea id="prompt" rows="3" maxlength="4000" required placeholder="What should NeuroPrep prepare? Include the input and output folders."></textarea>
+        <div class="composer-actions">
+          <label for="execute">Run</label>
+          <select id="execute">
+            <option value="local">here, to completion</option>
+            <option value="plan-only">pilot + plan only</option>
+            <option value="slurm">submit to Slurm</option>
+          </select>
+          <button type="submit" id="send">Send</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>
