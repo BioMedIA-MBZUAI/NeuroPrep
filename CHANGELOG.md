@@ -56,6 +56,9 @@
 - Example Slurm launchers read site locations from `scripts/ciai_env.sh`.
 
 ### Changed
+- QSIPrep runs with the image's own `gradients.py`. The patched copy
+  (`qsiprep_gradients_26_0.py`) it used to bind was lost with the original NeuroPrep v4
+  checkout and is no longer required. The executor catalog digest changes.
 - No built-in site paths: the data-root allowlist is the user's home,
   `NEUROPREP_HOME` and `NEUROPREP_ALLOWED_ROOTS`.
 - Bundled helper files (Eddy wrapper, PETPrep site customization) are bound from

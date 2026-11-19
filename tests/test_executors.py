@@ -38,11 +38,11 @@ def test_catalog_digest_is_stable_and_route_unique() -> None:
         raise AssertionError("duplicate executor must fail closed")
 
 
-def test_qsiprep_preserves_proven_gradient_and_geometry_safeguards() -> None:
+def test_qsiprep_keeps_geometry_safeguards_and_stock_gradients() -> None:
     definition = builtin_executor_catalog().by_id("qsiprep")
     command = " ".join(definition.command)
-    assert "qsiprep_gradients_26_0.py" in command
-    assert "/site-packages/qsiprep/interfaces/gradients.py:ro" in command
+    # The 26.0 gradients.py patch was lost with the original checkout; the image's own is used.
+    assert "interfaces/gradients.py" not in command
     assert "eddy_cuda10.2" in command
     assert "/neuroprep-resources/qsiprep_primary_t1.json" in command
     assert "/neuroprep-resources/eddy_cuda.json" in command

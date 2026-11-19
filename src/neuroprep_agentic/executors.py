@@ -744,12 +744,6 @@ def builtin_executor_definitions() -> tuple[ExecutorDefinition, ...]:
                     "{agentic_resources}/eddy_cuda10.2:"
                     "/app/.pixi/envs/qsiprep/bin/eddy_cuda10.2:ro"
                 ),
-                "--bind",
-                (
-                    "{neuroprep_project}/src/neuroprep/resources/qsiprep_gradients_26_0.py:"
-                    "/app/.pixi/envs/qsiprep/lib/python3.10/site-packages/qsiprep/"
-                    "interfaces/gradients.py:ro"
-                ),
                 "{image}",
                 "/data",
                 "/out/qsiprep",

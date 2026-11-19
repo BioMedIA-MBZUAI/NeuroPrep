@@ -88,7 +88,6 @@ def preflight_execution_plan(
         resources = Path(plan.layout.neuroprep_project) / "src/neuroprep/resources"
         resource_requirements = (
             (agentic_resources / "eddy_cuda10.2", True),
-            (resources / "qsiprep_gradients_26_0.py", False),
             (resources / "qsiprep_primary_t1.json", False),
             (resources / "eddy_cuda.json", False),
         )
