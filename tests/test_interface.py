@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.request import Request, urlopen
 
 import pytest
@@ -350,3 +352,26 @@ def test_dashboard_reads_live_task_state_logs_and_metrics(
 
     sample = interface.SystemMetrics.sample()
     assert "t" in sample and isinstance(sample["gpus"], list)
+
+
+def test_metrics_sampler_stops_with_its_server_and_ignores_patched_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # CIAI 422639: a sampler left running by another test called nvidia-smi through a
+    # later test's subprocess.run fake. It must stop with its server and not use the
+    # patched global.
+    calls = []
+    monkeypatch.setattr(interface.subprocess, "run", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(interface.shutil, "which", lambda name: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(
+        interface, "_run_process", lambda *a, **k: SimpleNamespace(stdout="")
+    )
+    assert interface._gpu_stats() == [] and calls == []
+
+    metrics = interface.SystemMetrics(interval=0.01)
+    metrics.start()
+    metrics.stop()
+    time.sleep(0.05)
+    count = len(metrics.samples)
+    time.sleep(0.05)
+    assert len(metrics.samples) == count

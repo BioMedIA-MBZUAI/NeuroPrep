@@ -4,7 +4,9 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from datetime import datetime
+from pathlib import Path
 
+from .bids import bids_relative_path
 from .identity import IdentityResolver
 from .models import (
     AcquisitionRecord,
@@ -120,6 +122,7 @@ class IngestionEngine:
         for (subject_id, _), session in sessions.items():
             self._normalize_pet_entities(session)
             self._enrich_fieldmap_collection(session)
+            self._stage_reverse_b0_as_fieldmap(session)
             subjects[subject_id].sessions.append(session)
         for subject in subjects.values():
             subject.sessions.sort(
@@ -200,6 +203,54 @@ class IngestionEngine:
             additions = {"EchoTime1": echo_times[0], "EchoTime2": echo_times[-1]}
             item.source.metadata.update(additions)
             item.bids.sidecar.update(additions)
+
+    @staticmethod
+    def _stage_reverse_b0_as_fieldmap(session: SessionRecord) -> None:
+        """Stage a b0-only DWI series with an opposite-PE partner as ``fmap/*_epi``.
+
+        Datasets often keep the reverse-phase b0 pair for TOPUP under ``dwi/``. Processed
+        as a DWI run of its own it breaks QSIPrep (Eddy cannot read an all-zero gradient
+        table, CIAI 422645); BIDS represents it as an EPI fieldmap with ``IntendedFor``.
+        """
+
+        def bvals(item: AcquisitionRecord) -> list[float] | None:
+            source = Path(item.source.source_path)
+            stem = source.name[:-7] if source.name.endswith(".nii.gz") else source.stem
+            path = source.with_name(stem + ".bval")
+            try:
+                return [float(value) for value in path.read_text(encoding="utf-8").split()]
+            except (OSError, ValueError):
+                return None
+
+        def opposite(direction: str) -> str:
+            return direction[:-1] if direction.endswith("-") else direction + "-"
+
+        series = [
+            (item, bvals(item), str(item.source.metadata.get("PhaseEncodingDirection") or ""))
+            for item in session.acquisitions
+            if item.selected_plugin_id == "mri.dwi"
+            and item.bids is not None
+            and item.bids.datatype == "dwi"
+        ]
+        weighted = [
+            (item, direction)
+            for item, values, direction in series
+            if values and any(value >= 50 for value in values) and direction
+        ]
+        for item, values, direction in series:
+            if not values or any(value >= 50 for value in values) or not direction:
+                continue
+            targets = [main for main, pe in weighted if pe == opposite(direction)]
+            if not targets or item.bids is None:
+                continue
+            intended = [
+                str(bids_relative_path(main).relative_to(f"{main.subject_id}"))
+                for main in targets
+            ]
+            item.bids.datatype = "fmap"
+            item.bids.suffix = "epi"
+            item.bids.entities["direction"] = direction.replace("-", "neg")
+            item.bids.sidecar["IntendedFor"] = intended
 
     def _classification_status(self, candidates):
         # Scores are additive decimal weights. Compare with a small tolerance so

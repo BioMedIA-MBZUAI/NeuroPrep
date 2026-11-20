@@ -97,6 +97,14 @@
   and catalog digests change.
 
 ### Fixed
+- A b0-only DWI series with an opposite-phase partner (the TOPUP pair many datasets keep in
+  `dwi/`) is staged as `fmap/*_dir-*_epi` with `IntendedFor`. QSIPrep processed it as a
+  DWI run of its own and Eddy failed reading its all-zero gradients (CIAI 422645); MRtrix3
+  reads the reverse b0 from the fieldmap.
+- Executors whose container takes the GPU (`--nv`, e.g. QSIPrep's CUDA Eddy) are planned
+  as GPU tasks, so they never share a GPU with DeepPrep or FastSurfer (CIAI 422645).
+- The chat dashboard's metrics sampler stops with its server, and its `nvidia-smi` calls
+  no longer go through a patched `subprocess.run` (a test failed on CIAI 422639).
 - MRtrix3 `dwibiascorrect` crashed with SIGBUS: its scratch defaulted to the container's
   small in-memory home under `--containall`. It now gets `-scratch` beside the outputs,
   and MRtrix3 steps run with the output folder as the working directory (CIAI 419571).

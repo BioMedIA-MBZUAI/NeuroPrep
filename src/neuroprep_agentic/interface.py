@@ -517,6 +517,7 @@ class SystemMetrics:
         self.samples: deque[dict[str, Any]] = deque(maxlen=keep)
         self._lock = threading.Lock()
         self._started = False
+        self._stop = threading.Event()
 
     def start(self) -> None:
         if self._started:
@@ -524,12 +525,15 @@ class SystemMetrics:
         self._started = True
         threading.Thread(target=self._loop, daemon=True, name="neuroprep-metrics").start()
 
+    def stop(self) -> None:
+        self._stop.set()
+
     def _loop(self) -> None:
-        while True:
+        while not self._stop.is_set():
             sample = self.sample()
             with self._lock:
                 self.samples.append(sample)
-            time.sleep(self.interval)
+            self._stop.wait(self.interval)
 
     @staticmethod
     def sample() -> dict[str, Any]:
@@ -563,12 +567,17 @@ def _meminfo() -> tuple[int, int] | None:
         return None
 
 
+# Bound at import, so a test that replaces subprocess.run cannot catch the sampler's
+# nvidia-smi calls from a server another test left running.
+_run_process = subprocess.run
+
+
 def _gpu_stats() -> list[dict[str, Any]]:
     smi = shutil.which("nvidia-smi")
     if not smi:
         return []
     try:
-        output = subprocess.run(  # noqa: S603 - fixed argv
+        output = _run_process(  # noqa: S603 - fixed argv
             [
                 smi,
                 "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,"
@@ -657,6 +666,10 @@ class _InterfaceServer(ThreadingHTTPServer):
         self.runs = AutoRuns(agentic_project)
         self.metrics = SystemMetrics()
         self.metrics.start()
+
+    def server_close(self) -> None:
+        self.metrics.stop()
+        super().server_close()
 
 
 class _InterfaceHandler(BaseHTTPRequestHandler):

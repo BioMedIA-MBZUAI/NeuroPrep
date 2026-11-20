@@ -190,3 +190,43 @@ def test_dates_create_longitudinal_sessions_when_source_labels_are_absent():
         "ses-d00000",
         "ses-d00365",
     ]
+
+
+def test_reverse_phase_b0_only_dwi_is_staged_as_an_epi_fieldmap(tmp_path):
+    # CIAI 422645: QSIPrep processed the 2-volume reverse-PE b0 series as a DWI run of its
+    # own and Eddy failed on its all-zero gradients. BIDS stages it as fmap/*_epi.
+    def dwi(name: str, bvals: str, direction: str) -> SourceRecord:
+        path = tmp_path / f"{name}_dwi.nii.gz"
+        path.write_bytes(b"")
+        (tmp_path / f"{name}_dwi.bval").write_text(bvals + "\n")
+        return SourceRecord(
+            dataset_id="custom-study",
+            source_path=str(path),
+            source_subject_id="source-patient",
+            source_session_id="preop",
+            metadata={
+                "Modality": "MR",
+                "SeriesDescription": "diffusion dwi",
+                "PhaseEncodingDirection": direction,
+            },
+        )
+
+    graph = engine().build_graph(
+        DatasetSpec(dataset_id="custom-study"),
+        [dwi("main", "0 1000 1000 0", "j-"), dwi("reverse", "0 0", "j"), dwi("b0", "0", "j-")],
+    )
+    by_name = {
+        item.source.source_path.rsplit("/", 1)[1]: item for item in graph.acquisitions
+    }
+    main = by_name["main_dwi.nii.gz"]
+    reverse = by_name["reverse_dwi.nii.gz"]
+    same_direction = by_name["b0_dwi.nii.gz"]
+
+    path = bids_relative_path(reverse)
+    assert path.parent.name == "fmap" and path.name.endswith("_dir-j_epi.nii.gz")
+    intended = reverse.bids.sidecar["IntendedFor"]
+    assert intended == [str(bids_relative_path(main).relative_to(main.subject_id))]
+    assert intended[0].startswith("ses-") and intended[0].endswith("_dwi.nii.gz")
+    # No opposite-PE partner: a b0-only series in the main direction stays a DWI run.
+    assert bids_relative_path(same_direction).parent.name == "dwi"
+    assert bids_relative_path(main).parent.name == "dwi"

@@ -155,6 +155,10 @@ def test_qsiprep_retains_eddy_for_shelled_sampling(nfs_tmp: Path) -> None:
     assert "--hmc-model" not in task.command
     assert "--eddy-config" in task.command
     assert task.metadata["dwi_sampling"]["selected_hmc_model"] == "eddy"
+    # CUDA Eddy takes the GPU (--nv), so QSIPrep is a GPU task even though the CPU-class
+    # dwi_preprocess stage does not ask for one (CIAI 422645: it starved DeepPrep).
+    assert "--nv" in task.command
+    assert (task.resource_class, task.gpus) == ("gpu", 1)
 
 
 def test_compiler_emits_fingerprinted_dependency_dag(nfs_tmp: Path) -> None:

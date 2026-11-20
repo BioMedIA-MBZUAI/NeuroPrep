@@ -515,6 +515,13 @@ def compile_execution_plan(
             if item in acquisitions
         }
         resource = _maximum_resource([member.resource for member in members])
+        if "--nv" in definition.command and resource.resource_class != "gpu":
+            # The container takes the GPU (e.g. QSIPrep's CUDA eddy) though the stage alone
+            # does not ask for one; schedule it as a GPU task so it never shares a GPU in
+            # exclusive-process mode with another GPU task (CIAI 422645).
+            resource = resource.model_copy(
+                update={"resource_class": "gpu", "gpus": max(1, resource.gpus)}
+            )
         required = any(member.required for member in members) and key not in candidate_keys
         subject_id = members[0].subject_id
         sessions = {member.session_id for member in members}

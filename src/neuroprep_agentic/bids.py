@@ -4,7 +4,9 @@ from pathlib import PurePosixPath
 
 from .models import AcquisitionRecord, ClassificationStatus
 
-ENTITY_ORDER = ("subject", "session", "task", "acquisition", "ceagent", "tracer", "run")
+ENTITY_ORDER = (
+    "subject", "session", "task", "acquisition", "ceagent", "tracer", "direction", "run"
+)
 
 
 def bids_relative_path(acquisition: AcquisitionRecord) -> PurePosixPath:
@@ -28,6 +30,7 @@ def bids_relative_path(acquisition: AcquisitionRecord) -> PurePosixPath:
             "acquisition": "acq",
             "ceagent": "ce",
             "tracer": "trc",
+            "direction": "dir",
         }.get(key, key)
         labels.append(f"{short}-{value}")
     labels.append(acquisition.bids.suffix)

@@ -100,6 +100,9 @@ def _paired_sidecars(source: Path, target: Path, plugin_id: str = "") -> None:
     extensions = (".bval", ".bvec", ".tsv", ".tsv.gz")
     if plugin_id in {"pet", "mri.asl"}:
         extensions = (".bval", ".bvec")
+    if target_stem.endswith("_epi"):
+        # A reverse-PE b0 series staged as an EPI fieldmap carries no gradient table.
+        extensions = tuple(item for item in extensions if item not in {".bval", ".bvec"})
     for extension in extensions:
         candidate = source.with_name(source_stem + extension)
         if candidate.is_file():
@@ -1463,18 +1466,26 @@ def mrtrix3_dwi_commands(
 def _mrtrix3_dwi(task: ExecutableTask, output: Path, image: Path) -> dict[str, Any]:
     series = []
     for nifti in _bids_inputs(task):
-        if not nifti.name.endswith("_dwi.nii.gz"):
+        if not nifti.name.endswith(("_dwi.nii.gz", "_epi.nii.gz")):
             continue
         stem = nifti.name[: -len(".nii.gz")]
         bval, bvec, sidecar = (nifti.with_name(stem + ext) for ext in (".bval", ".bvec", ".json"))
         metadata = json.loads(sidecar.read_text(encoding="utf-8")) if sidecar.is_file() else {}
+        if stem.endswith("_epi"):
+            # Reverse-PE b0 series staged as an EPI fieldmap: all volumes are b0.
+            import nibabel as nib
+
+            shape = nib.load(str(nifti)).shape
+            values = [0.0] * (int(shape[3]) if len(shape) > 3 else 1)
+        else:
+            values = [float(value) for value in bval.read_text().split()]
         series.append(
             {
                 "nifti": nifti,
                 "bval": bval,
                 "bvec": bvec,
                 "json": sidecar,
-                "bvals": [float(value) for value in bval.read_text().split()],
+                "bvals": values,
                 "pe": metadata.get("PhaseEncodingDirection"),
             }
         )
