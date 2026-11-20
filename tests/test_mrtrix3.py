@@ -58,3 +58,13 @@ def test_refuses_without_weighted_volumes_or_phase_encoding():
         mrtrix3_dwi_commands([REVERSE], OUT, "sub-01", 4)
     with pytest.raises(ValueError, match="PhaseEncodingDirection"):
         mrtrix3_dwi_commands([{**MAIN, "pe": None}], OUT, "sub-01", 4)
+
+
+def test_every_script_scratch_stays_beside_the_outputs():
+    # CIAI 419571: dwibiascorrect's default scratch was the in-memory container home and
+    # filled it (SIGBUS). Each MRtrix3 script must get an explicit scratch under OUT.
+    commands = mrtrix3_dwi_commands([REVERSE, MAIN], OUT, "sub-01", 8)
+    for name in ("dwifslpreproc", "dwibiascorrect"):
+        command = next(c for c in commands if c[0] == name)
+        scratch = command[command.index("-scratch") + 1]
+        assert scratch.startswith(str(OUT) + "/")

@@ -69,6 +69,8 @@
 - Example Slurm launchers read site locations from `scripts/ciai_env.sh`.
 
 ### Changed
+- `auto` runs local tasks in two lanes side by side, one for GPU tasks and one for the
+  rest, so a pilot comparing GPU and CPU backends takes about as long as its longer lane.
 - The NeuroPrep multimodal v4 code is bundled (`neuroprep_agentic/vendor/neuroprep_v4`,
   Apache-2.0, unchanged), so the CT/spatial, SWI/QSM, EEG/iEEG/MEG and QSIPrep executors
   work from a pip install; `NEUROPREP_V4_PROJECT` defaults to it. The sensor executors
@@ -95,6 +97,12 @@
   and catalog digests change.
 
 ### Fixed
+- MRtrix3 `dwibiascorrect` crashed with SIGBUS: its scratch defaulted to the container's
+  small in-memory home under `--containall`. It now gets `-scratch` beside the outputs,
+  and MRtrix3 steps run with the output folder as the working directory (CIAI 419571).
+- Evidence signatures no longer include task resources: they are merged from the stages a
+  task serves, so a CT spatial task that also served `ct_segment` in the pilot (GPU) but
+  not in the target (CPU) failed with "executor command mismatch" (CIAI 419890).
 - ASLPrep 26.0.3 crashed on Python 3.12 whenever a plot raised a matplotlib warning
   (`_warn() got an unexpected keyword argument 'skip_file_prefixes'`, seen in
   `conf_plot` on OpenNeuro ds000240). A third run-time patch makes ASLPrep's

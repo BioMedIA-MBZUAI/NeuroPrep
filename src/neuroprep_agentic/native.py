@@ -1441,8 +1441,10 @@ def mrtrix3_dwi_commands(
         preproc += ["-se_epi", o("b0_pair.mif"), "-align_seepi"]
     steps += [
         [*preproc, "-scratch", o("scratch"), "-eddyqc_text", o("eddyqc"), *n],
+        # MRtrix3 scripts default their scratch to the working directory, which under
+        # --containall is a small in-memory home: keep every scratch next to the outputs.
         ["dwibiascorrect", "ants", o("preproc.mif"), o("unbiased.mif"), "-bias",
-         o("bias.mif"), *n],
+         o("bias.mif"), "-scratch", o("scratch-bias"), *n],
         ["dwi2mask", o("unbiased.mif"), o("mask.mif"), *n],
         ["mrconvert", o("unbiased.mif"), o(f"{prefix}_desc-preproc_dwi.nii.gz"),
          "-export_grad_fsl", o(f"{prefix}_desc-preproc_dwi.bvec"),
@@ -1485,7 +1487,8 @@ def _mrtrix3_dwi(task: ExecutableTask, output: Path, image: Path) -> dict[str, A
         for item in ("--bind", f"{root}:{root}")
     ]
     container = [
-        str(paths.container_runtime()), "exec", "--cleanenv", "--containall", *binds, str(image)
+        str(paths.container_runtime()), "exec", "--cleanenv", "--containall",
+        "--pwd", str(output), *binds, str(image),
     ]
     commands = mrtrix3_dwi_commands(series, output, prefix, task.cpus)
     for command in commands:

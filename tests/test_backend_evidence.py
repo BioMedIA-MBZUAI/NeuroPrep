@@ -634,13 +634,25 @@ def test_signature_folds_per_subject_input_file_names() -> None:
     executor_signature(plan, "synthseg")  # raises if the two subjects differ
 
 
-def test_signature_ignores_stages_an_alternative_took_over() -> None:
+def test_signature_ignores_stages_and_resources_an_alternative_took_over() -> None:
     from neuroprep_agentic.backend_evidence import executor_signature
 
-    def plan(stages: list[str]) -> dict:
-        task = {"executor_id": "neuroprep-spatial", "stages": stages, "command": ["run", "ct"]}
+    def plan(stages: list[str], resource_class: str, gpus: int, memory_gb: int) -> dict:
+        task = {
+            "executor_id": "neuroprep-spatial",
+            "stages": stages,
+            "command": ["run", "ct"],
+            "resource_class": resource_class,
+            "cpus": 8,
+            "gpus": gpus,
+            "memory_gb": memory_gb,
+        }
         return {"layout": {}, "tasks": [task]}
 
-    assert executor_signature(plan(["ct_preprocess", "ct_segment"]), "neuroprep-spatial") == (
-        executor_signature(plan(["ct_preprocess"]), "neuroprep-spatial")
+    # CIAI 419890: in the pilot the spatial task also served ct_segment, so its resources
+    # were merged with TotalSegmentator's GPU needs; the target routed ct_segment away.
+    pilot = plan(["ct_preprocess", "ct_segment"], "gpu", 1, 32)
+    target = plan(["ct_preprocess"], "cpu", 0, 24)
+    assert executor_signature(pilot, "neuroprep-spatial") == (
+        executor_signature(target, "neuroprep-spatial")
     )

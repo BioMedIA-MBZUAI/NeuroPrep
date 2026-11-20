@@ -426,3 +426,37 @@ def test_a_failing_required_backend_still_stops_a_comparison_pilot(nfs_tmp, monk
     with pytest.raises(AutopilotError, match="smriprep"):
         harness.run()
     assert "production" not in harness.labels()
+
+
+def test_local_execution_runs_gpu_and_cpu_lanes_side_by_side(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import threading
+
+    plan = SimpleNamespace(
+        layout=SimpleNamespace(state_path="state.sqlite"),
+        tasks=[SimpleNamespace(resource_class=name) for name in ("gpu", "cpu", "high_memory")],
+    )
+    monkeypatch.setattr(
+        autopilot.ExecutionPlan, "model_validate_json", staticmethod(lambda text: plan)
+    )
+    monkeypatch.setattr(
+        autopilot, "RunState", lambda path: SimpleNamespace(summary=lambda: {"counts": {}})
+    )
+    both_started = threading.Barrier(2, timeout=5)
+    lanes = []
+
+    def worker(state_path, worker_id, classes, **kwargs):
+        lanes.append((worker_id.rsplit("-", 1)[1], frozenset(classes)))
+        both_started.wait()  # deadlocks (BrokenBarrierError) if the lanes run one by one
+        return {"claimed": 1, "completed": 1, "failed": 0}
+
+    path = tmp_path / "plan.json"
+    path.write_text("{}")
+    result = autopilot._execute_locally(path, worker=worker, idle_seconds=0)
+
+    assert sorted(lanes) == [
+        ("cpu", frozenset({"cpu", "high_memory"})),
+        ("gpu", frozenset({"gpu"})),
+    ]
+    assert result["worker"] == {"claimed": 2, "completed": 2, "failed": 0}

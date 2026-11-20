@@ -512,8 +512,9 @@ def executor_signature(plan: dict[str, Any], executor_id: str) -> str:
         payload = {
             "executor_id": executor_id,
             "plugin_ids": sorted(task.get("plugin_ids", [])),
-            # Stages are left out: which stages a backend serves is a routing decision (an
-            # alternative can take one over); the command and artifacts carry behaviour.
+            # Stages and resources are left out: which stages a backend serves is a routing
+            # decision (an alternative can take one over), and a task's resources are merged
+            # from its stages; the command, environment and artifacts carry behaviour.
             "scope": task.get("scope"),
             "command": [
                 _normalize_value(str(value), plan, task) for value in task.get("command", [])
@@ -521,12 +522,6 @@ def executor_signature(plan: dict[str, Any], executor_id: str) -> str:
             "environment": {
                 key: _normalize_value(str(value), plan, task)
                 for key, value in sorted(task.get("environment", {}).items())
-            },
-            "resource": {
-                "class": task.get("resource_class"),
-                "cpus": task.get("cpus"),
-                "memory_gb": task.get("memory_gb"),
-                "gpus": task.get("gpus"),
             },
             "artifacts": _normalized_artifacts(plan, task),
             "executor_metadata": {

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -135,13 +136,30 @@ def _execute_locally(
 ) -> dict[str, Any]:
     plan = ExecutionPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
     classes = {task.resource_class for task in plan.tasks}
-    counts = worker(
-        plan.layout.state_path,
-        f"autopilot-{os.getpid()}",
-        classes,
-        idle_seconds=idle_seconds,
-        exit_when_idle=True,
-    )
+    # One worker for GPU tasks and one for the rest, side by side: a pilot that compares
+    # GPU and CPU backends then takes about as long as its longer lane, not their sum.
+    # Each worker exits only when its own classes have no unfinished work.
+    lanes = {
+        name: group
+        for name, group in (("gpu", classes & {"gpu"}), ("cpu", classes - {"gpu"}))
+        if group
+    }
+
+    def lane(name: str) -> dict[str, int]:
+        return worker(
+            plan.layout.state_path,
+            f"autopilot-{os.getpid()}-{name}",
+            lanes[name],
+            idle_seconds=idle_seconds,
+            exit_when_idle=True,
+        )
+
+    with ThreadPoolExecutor(max_workers=max(1, len(lanes))) as pool:
+        results = list(pool.map(lane, sorted(lanes)))
+    counts: dict[str, int] = {}
+    for result in results:
+        for key, value in result.items():
+            counts[key] = counts.get(key, 0) + value
     summary = RunState(plan.layout.state_path).summary()
     return {"worker": counts, "state": summary}
 
