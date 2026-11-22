@@ -88,7 +88,7 @@ flowchart LR
     Q --> E["Signed evidence<br/>(HMAC, git-bound)"]
     E --> S["Backend selection<br/>with recorded reasons"]
     S --> X["Production run<br/>local or Slurm"]
-    X --> GContract met?
+    X --> G{"Contract met?"}
     G -->|yes| D["Atomic release<br/>+ model-ready index"]
     G -->|no| X
 ```
