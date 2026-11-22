@@ -37,6 +37,11 @@ dev = [
   "ruff>=0.12,<1",
 ]
 
+[project.urls]
+Repository = "https://github.com/BioMedIA-MBZUAI/NeuroPrep"
+Issues = "https://github.com/BioMedIA-MBZUAI/NeuroPrep/issues"
+Changelog = "https://github.com/BioMedIA-MBZUAI/NeuroPrep/blob/main/CHANGELOG.md"
+
 [project.scripts]
 neuroprep-agentic = "neuroprep_agentic.main:cli"
 kickoff = "neuroprep_agentic.control:kickoff"

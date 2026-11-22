@@ -12,6 +12,7 @@ authors:
 version: 0.5.0
 date-released: 2026-11-18
 license: PolyForm-Noncommercial-1.0.0
+repository-code: "https://github.com/BioMedIA-MBZUAI/NeuroPrep"
 keywords:
   - neuroimaging
   - BIDS
