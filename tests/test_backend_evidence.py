@@ -282,6 +282,39 @@ def _build(monkeypatch: pytest.MonkeyPatch, fixture: dict[str, object]):
     )
 
 
+def test_evidence_signs_tests_of_a_consumer_the_target_route_drops(
+    monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
+) -> None:
+    fixture = _fixture(nfs_tmp)
+    target = deepcopy(fixture["target"])
+    dropped = {
+        **target["planned_smoke_tests"][0],
+        "test_id": "smoke--diffusion_model--qsirecon",
+        "capability": "diffusion_model",
+        "package_id": "qsirecon",
+        "executor_id": "qsirecon",
+    }
+    target["backend_qualification_tests"] = [*target["planned_smoke_tests"], dropped]
+    _json(fixture["target_plan"], target)
+
+    document = _build(monkeypatch, fixture)
+
+    assert [item.test_id for item in document.target.smoke_tests] == [
+        "smoke--diffusion_model--qsirecon",
+        "smoke--structural_preprocess--smriprep",
+    ]
+    evidence_path = write_evidence_document(document, nfs_tmp / "evidence" / "dropped.json")
+    loaded = validate_backend_evidence(
+        evidence_path=evidence_path,
+        signing_key=KEY,
+        target_plan=target,
+        target_smoke_tests=target["backend_qualification_tests"],
+        catalog_digest=CATALOG,
+        target_git_commit=COMMIT,
+    )
+    assert loaded.statuses == {"smoke--structural_preprocess--smriprep": "passed"}
+
+
 def test_openneuro_current_pilot_builds_deterministic_anmerge_evidence(
     monkeypatch: pytest.MonkeyPatch, nfs_tmp: Path
 ) -> None:

@@ -898,7 +898,14 @@ def build_backend_evidence(
         _validate_release(pilot_release_path, pilot_plan, task_counts)
     )
     total_artifacts, total_artifact_digest = _artifact_audit(pilot_plan, records)
-    target_smokes = _smoke_specs(target_plan)
+    # Sign every test the run plan requires, including one whose consumer the default route
+    # drops (QSIRecon when MRtrix3 fits the tensors itself, CIAI 428075).
+    target_smokes = _smoke_specs(
+        {
+            "planned_smoke_tests": target_plan.get("backend_qualification_tests")
+            or target_plan.get("planned_smoke_tests", [])
+        }
+    )
     if not target_smokes:
         raise EvidenceValidationError("target smoke intersection is empty")
     tests: list[BackendTestEvidence] = []
