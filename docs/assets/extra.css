@@ -1,0 +1,38 @@
+/* NeuroPrep brand colours, taken from the logo's two hemispheres. */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #0e8a92;
+  --md-primary-fg-color--light: #19b8ae;
+  --md-primary-fg-color--dark: #0a6c73;
+  --md-accent-fg-color: #4a4fd8;
+  --md-typeset-a-color: #0b7d85;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #0e8a92;
+  --md-primary-fg-color--light: #19b8ae;
+  --md-primary-fg-color--dark: #0a6c73;
+  --md-accent-fg-color: #8b8ff0;
+  --md-typeset-a-color: #4fd1c5;
+}
+
+.np-hero {
+  text-align: center;
+  padding: 1.5rem 0 0.5rem;
+}
+
+.np-hero h1 {
+  margin: 0.4rem 0 0.6rem;
+  font-weight: 700;
+}
+
+.np-hero-logo {
+  width: 120px;
+  height: 120px;
+}
+
+.np-hero p {
+  max-width: 44rem;
+  margin-left: auto;
+  margin-right: auto;
+}

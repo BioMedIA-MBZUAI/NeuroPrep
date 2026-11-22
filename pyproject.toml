@@ -1,8 +1,7 @@
 [project]
 name = "neuroprep-agentic"
-dynamic = ["version"]
+dynamic = ["version", "readme"]
 description = "Dataset-agnostic agentic control plane for multimodal neurodata ingestion and preprocessing"
-readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "PolyForm-Noncommercial-1.0.0"
 license-files = ["LICENSE", "CITATION.cff"]
@@ -38,6 +37,7 @@ dev = [
 ]
 
 [project.urls]
+Documentation = "https://biomedia-mbzuai.github.io/NeuroPrep/"
 Repository = "https://github.com/BioMedIA-MBZUAI/NeuroPrep"
 Issues = "https://github.com/BioMedIA-MBZUAI/NeuroPrep/issues"
 Changelog = "https://github.com/BioMedIA-MBZUAI/NeuroPrep/blob/main/CHANGELOG.md"
@@ -52,10 +52,37 @@ dev = [
   "pytest>=8,<10",
   "ruff>=0.12,<1",
 ]
+docs = [
+  "mkdocs-material>=9.6,<10",
+]
 
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27", "hatch-fancy-pypi-readme>=24.1"]
 build-backend = "hatchling.build"
+
+# PyPI cannot render repo-relative links or mermaid, so the package page gets a copy of
+# README.md with absolute GitHub links, a PNG logo and the diagrams replaced by text.
+[tool.hatch.metadata.hooks.fancy-pypi-readme]
+content-type = "text/markdown"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+path = "README.md"
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = 'docs/assets/neuroprep-logo\.svg'
+replacement = 'https://raw.githubusercontent.com/BioMedIA-MBZUAI/NeuroPrep/main/docs/assets/neuroprep-logo.png'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(?s)```mermaid\nflowchart LR\n.*?\n```'
+replacement = 'Request → typed policy (LLM, schema-validated) → inventory, identity and BIDS mapping → compiled task DAG → pilot of every competing backend on one participant → signed evidence (HMAC, git-bound) → backend selection with recorded reasons → production run (local or Slurm) → contract check → atomic release with a model-ready index.'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(href="|\]\()#'
+replacement = '\g<1>https://github.com/BioMedIA-MBZUAI/NeuroPrep#'
+
+[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+pattern = '(src="|href="|\]\()(?!https?:|mailto:|#)'
+replacement = '\g<1>https://github.com/BioMedIA-MBZUAI/NeuroPrep/blob/main/'
 
 [tool.hatch.version]
 path = "src/neuroprep_agentic/__init__.py"

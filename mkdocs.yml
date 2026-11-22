@@ -1,0 +1,103 @@
+site_name: NeuroPrep
+site_description: One request in, validated multimodal neuroimaging derivatives out.
+site_url: https://biomedia-mbzuai.github.io/NeuroPrep/
+repo_url: https://github.com/BioMedIA-MBZUAI/NeuroPrep
+repo_name: BioMedIA-MBZUAI/NeuroPrep
+edit_uri: edit/main/docs/
+copyright: NeuroPrep is released under the PolyForm Noncommercial License 1.0.0
+
+theme:
+  name: material
+  logo: assets/neuroprep-logo.svg
+  favicon: assets/neuroprep-logo.png
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+extra_css:
+  - assets/extra.css
+
+hooks:
+  - docs/hooks/cli_reference.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+not_in_nav: |
+  READINESS.md
+  hooks/
+
+exclude_docs: |
+  hooks/
+  assets/social-preview.png
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Quick start: quickstart.md
+  - User guide:
+      - How it works: how-it-works.md
+      - Backend comparisons: backends.md
+      - Supported modalities: modalities.md
+      - Language models: llm-providers.md
+      - Configuring a host: configuration.md
+      - Chat and dashboard: interface.md
+      - Running on Slurm: slurm.md
+      - Onboarding a dataset: dataset-onboarding.md
+  - Concepts:
+      - Architecture: architecture.md
+      - Signed backend evidence: backend-evidence.md
+      - Modality matrix: modality-matrix.md
+      - OpenJev integration: OPENJEV.md
+  - Reference:
+      - Command line: cli.md
+      - Changelog: changelog.md
+      - License and citation: citation.md
