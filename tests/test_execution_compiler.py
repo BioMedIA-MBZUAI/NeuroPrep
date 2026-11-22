@@ -438,3 +438,20 @@ def test_selected_mrtrix3_takes_over_the_tensor_fit(nfs_tmp: Path) -> None:
     assert set(mrtrix3.stages) == {"dwi_preprocess", "dti_fit"} and mrtrix3.required
     assert not {"qsiprep", "qsirecon"} & {t.executor_id for t in routed.tasks}
     assert any("dropped optional qsirecon" in warning for warning in routed.warnings)
+
+    # The pilot runs the optional QSIRecon after the compared QSIPrep, not skips it
+    # (a tensor-only request leaves QSIRecon optional, as on CIAI 425628).
+    optional_recon = PlanResult(
+        tasks=[
+            t.model_copy(update={"required": False})
+            if catalog.resolve(t.plugin_id, t.stage, set()).executor_id == "qsirecon"
+            else t
+            for t in logical.tasks
+        ]
+    )
+    pilot = compile_execution_plan(
+        graph, optional_recon, layout, catalog, qualification_candidates={"qsiprep", "mrtrix3"}
+    )
+    qsirecon = next(t for t in pilot.tasks if t.executor_id == "qsirecon")
+    assert not qsirecon.required and qsirecon.metadata["qualification_candidate"] is True
+    assert pilot.runs(qsirecon)

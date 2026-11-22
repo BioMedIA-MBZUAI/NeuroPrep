@@ -484,6 +484,12 @@ def compile_execution_plan(
     candidate_keys -= committed_keys
     warnings: list[str] = []
     consumed_from = _bind_consumers(grouped, definitions, warnings)
+    # A pilot also runs the optional consumer of a compared alternative (QSIRecon after
+    # QSIPrep), so that chain is qualified instead of skipped (CIAI 425628).
+    compared_ids = {definitions[key].executor_id for key in candidate_keys if key in definitions}
+    for key, (_interface, provider) in consumed_from.items():
+        if provider.executor_id in compared_ids and not any(m.required for m in grouped[key]):
+            candidate_keys.add(key)
 
     pending_dependency_ids: dict[str, set[str]] = {}
     for key, members in grouped.items():
