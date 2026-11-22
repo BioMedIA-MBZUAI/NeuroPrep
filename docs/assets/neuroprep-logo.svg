@@ -1,38 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="t">
-  <title id="t">NeuroPrep</title>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0E9F9A"/>
-      <stop offset="1" stop-color="#3B3FC4"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <!-- brain outline -->
-  <path d="M128 300 C94 270 96 196 140 160 C176 118 250 104 306 116 C364 128 414 170 418 230 C420 268 404 296 380 306 C396 330 384 362 350 364 C326 366 308 354 300 340 C298 362 298 384 304 406 L270 406 C270 380 268 358 260 340 C232 348 196 344 176 330 C158 332 138 320 128 300 Z"
-        fill="none" stroke="#fff" stroke-width="16" stroke-linejoin="round" opacity="0.95"/>
-  <!-- pipeline DAG inside the brain -->
-  <g stroke="#fff" stroke-width="10" stroke-linecap="round" opacity="0.85">
-    <line x1="168" y1="200" x2="234" y2="172"/>
-    <line x1="168" y1="200" x2="234" y2="242"/>
-    <line x1="168" y1="278" x2="234" y2="242"/>
-    <line x1="168" y1="278" x2="234" y2="304"/>
-    <line x1="234" y1="172" x2="302" y2="204"/>
-    <line x1="234" y1="242" x2="302" y2="204"/>
-    <line x1="234" y1="242" x2="302" y2="280"/>
-    <line x1="234" y1="304" x2="302" y2="280"/>
-    <line x1="302" y1="204" x2="352" y2="242"/>
-    <line x1="302" y1="280" x2="352" y2="242"/>
-  </g>
-  <g fill="#fff">
-    <circle cx="168" cy="200" r="15"/>
-    <circle cx="168" cy="278" r="15"/>
-    <circle cx="234" cy="172" r="15"/>
-    <circle cx="234" cy="242" r="15"/>
-    <circle cx="234" cy="304" r="15"/>
-    <circle cx="302" cy="204" r="15"/>
-    <circle cx="302" cy="280" r="15"/>
-    <circle cx="358" cy="242" r="30"/>
-  </g>
-  <!-- release check -->
-  <path d="M344 243 L355 254 L374 232" fill="none" stroke="#3B3FC4" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="t"><title id="t">NeuroPrep</title><defs><linearGradient id="l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#19B8AE"/><stop offset="1" stop-color="#0E8A92"/></linearGradient><linearGradient id="r" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5257E0"/><stop offset="1" stop-color="#3438B4"/></linearGradient></defs>
+<path d="M244 80 C190 74 150 100 136 134 C96 140 74 180 84 214 C58 238 60 286 88 306 C80 346 108 384 148 388 C164 424 210 440 244 428 Z" fill="url(#l)"/>
+<path d="M268 80 C322 74 362 100 376 134 C416 140 438 180 428 214 C454 238 452 286 424 306 C432 346 404 384 364 388 C348 424 302 440 268 428 Z" fill="url(#r)"/>
+<g fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" opacity=".92">
+<path d="M150 150 C178 130 206 160 228 140"/><path d="M110 226 C140 204 170 246 200 222 C214 212 222 222 228 230"/><path d="M118 300 C150 282 176 318 206 298"/><path d="M164 372 C186 356 206 376 228 362"/></g>
+<g fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" opacity=".95">
+<path d="M284 150 H330 L356 176"/><path d="M284 240 H392"/><path d="M284 330 H330 L356 304"/></g>
+<g fill="#fff"><circle cx="366" cy="186" r="16"/><circle cx="404" cy="240" r="16"/><circle cx="366" cy="294" r="16"/></g>
 </svg>
