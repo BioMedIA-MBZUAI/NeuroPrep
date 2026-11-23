@@ -60,8 +60,8 @@ docs = [
 requires = ["hatchling>=1.27", "hatch-fancy-pypi-readme>=24.1"]
 build-backend = "hatchling.build"
 
-# PyPI cannot render repo-relative links or mermaid, so the package page gets a copy of
-# README.md with absolute GitHub links, a PNG logo and the diagrams replaced by text.
+# PyPI cannot render repo-relative links or SVG logos, so the package page gets a copy of
+# README.md with absolute GitHub links and raw image URLs.
 [tool.hatch.metadata.hooks.fancy-pypi-readme]
 content-type = "text/markdown"
 
@@ -73,8 +73,8 @@ pattern = 'docs/assets/neuroprep-logo\.svg'
 replacement = 'https://raw.githubusercontent.com/BioMedIA-MBZUAI/NeuroPrep/main/docs/assets/neuroprep-logo.png'
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
-pattern = '(?s)```mermaid\nflowchart LR\n.*?\n```'
-replacement = 'Request → typed policy (LLM, schema-validated) → inventory, identity and BIDS mapping → compiled task DAG → pilot of every competing backend on one participant → signed evidence (HMAC, git-bound) → backend selection with recorded reasons → production run (local or Slurm) → contract check → atomic release with a model-ready index.'
+pattern = 'src="docs/assets/figures/'
+replacement = 'src="https://raw.githubusercontent.com/BioMedIA-MBZUAI/NeuroPrep/main/docs/assets/figures/'
 
 [[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
 pattern = '(href="|\]\()#'
